@@ -20,6 +20,7 @@ export interface BotRow {
   role?: string | null;
   description?: string | null;
   isChiefOfStaff?: boolean | null;
+  model?: string | null;
   skillsEnabled?: string[] | null;
   mcpEnabled?: string[] | null;
   color?: string | null;
@@ -34,8 +35,9 @@ function toRow(r: any): BotRow {
     name: r.name,
     role: r.role ?? null,
     description: r.description ?? null,
-    isChiefOfStaff: r.isChiefOfStaff ?? false,
-    skillsEnabled: (r.skillsEnabled as string[] | null | undefined) ?? null,
+  isChiefOfStaff: r.isChiefOfStaff ?? false,
+  model: r.model ?? null,
+  skillsEnabled: (r.skillsEnabled as string[] | null | undefined) ?? null,
     mcpEnabled: (r.mcpEnabled as string[] | null | undefined) ?? null,
     color: r.color ?? null,
     shape: r.shape ?? null,

@@ -27,6 +27,7 @@ type ViewBot = RosterBot & { id: string };
 function toViewBot(r: {
   id: string;
   name: string;
+  model?: string | null;
   role?: string | null;
   color?: string | null;
   shape?: string | null;
@@ -35,6 +36,7 @@ function toViewBot(r: {
   return {
     id: r.id,
     name: r.name,
+    model: r.model ?? null,
     role: r.role ?? '',
     color: validColors.includes(r.color as MascotColor) ? (r.color as MascotColor) : 'amber',
     shape: validShapes.includes(r.shape as MascotShape) ? (r.shape as MascotShape) : 'blob',
