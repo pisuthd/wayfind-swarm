@@ -6,6 +6,7 @@ import BotPanelHeader from './BotPanelHeader';
 import BotPanelBody from './BotPanelBody';
 import BotEditModal from './BotEditModal';
 import DeleteBotModal from './DeleteBotModal';
+import TerminalModal from '../Terminal/TerminalModal';
 
 export interface BotEdits {
   name: string;
@@ -35,6 +36,7 @@ interface BotPanelProps {
 export default function BotPanel({ open, onClose, botId, ownerId, name, role, description, model, isChiefOfStaff, color, shape, synced, onSave, onDelete }: BotPanelProps) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [termOpen, setTermOpen] = useState(false);
   const v = { name, role, isChiefOfStaff, color, shape };
 
   return (
@@ -46,7 +48,7 @@ export default function BotPanel({ open, onClose, botId, ownerId, name, role, de
     >
       <div className="flex h-full w-80 flex-col p-5">
         <BotPanelHeader onClose={onClose} onDeleteClick={() => setDeleteOpen(true)} />
-        <BotPanelBody value={v} botId={botId} ownerId={ownerId} description={description} model={model} synced={synced} onEdit={() => setEditOpen(true)} />
+        <BotPanelBody value={v} botId={botId} ownerId={ownerId} description={description} model={model} synced={synced} onEdit={() => setEditOpen(true)} onOpenTerminal={() => setTermOpen(true)} />
       </div>
       <DeleteBotModal
         open={deleteOpen}
@@ -61,6 +63,7 @@ export default function BotPanel({ open, onClose, botId, ownerId, name, role, de
           return err;
         }}
       />
+      <TerminalModal open={termOpen} onClose={() => setTermOpen(false)} botName={name} />
       <BotEditModal
         open={editOpen}
         onClose={() => setEditOpen(false)}

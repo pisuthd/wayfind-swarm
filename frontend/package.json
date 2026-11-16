@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@aws-amplify/ui-react": "^6.11.2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "aws-amplify": "^6.6.6",
     "framer-motion": "^14.14.0",
     "lucide-react": "^1.72.0",

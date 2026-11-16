@@ -4,10 +4,10 @@ import { useState } from 'react';
 import TabDetails from './TabDetails';
 import TabConsole from './TabConsole';
 
-const tabs = ['Details', 'Console'] as const;
+const tabs = ['Details', 'Computer'] as const;
 type Tab = (typeof tabs)[number];
 
-export default function BotPanelTabs({ botId, role, description, model }: { botId: string | null; role: string; description?: string | null; model?: string | null }) {
+export default function BotPanelTabs({ botId, role, description, model, onOpenTerminal }: { botId: string | null; role: string; description?: string | null; model?: string | null; onOpenTerminal: () => void }) {
   const [tab, setTab] = useState<Tab>('Details');
 
   return (
@@ -29,7 +29,7 @@ export default function BotPanelTabs({ botId, role, description, model }: { botI
       </div>
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-0.5" role="tabpanel">
         {tab === 'Details' && <TabDetails botId={botId} role={role} description={description} model={model} />}
-        {tab === 'Console' && <TabConsole />}
+        {tab === 'Computer' && <TabConsole onOpen={() => onOpenTerminal()} />}
       </div>
     </div>
   );
