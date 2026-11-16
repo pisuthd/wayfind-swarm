@@ -11,7 +11,7 @@ const brico = Bricolage_Grotesque({
 
 const display = Sora({
   subsets: ['latin'],
-  weight: ['600', '700', '800'],
+  weight: ['400', '600', '700', '800'],
   variable: '--font-display',
 });
 
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${brico.variable} ${display.variable} bg-mist text-navy antialiased`}>
+      <body className={`${brico.variable} ${display.variable} bg-mist font-display text-navy antialiased`}>
         <ConfigureAmplify>{children}</ConfigureAmplify>
       </body>
     </html>

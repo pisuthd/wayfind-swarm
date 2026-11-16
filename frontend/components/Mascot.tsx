@@ -1,6 +1,6 @@
 'use client';
 
-export type MascotColor = 'amber' | 'moss' | 'lagoon' | 'ash' | 'white' | 'blue' | 'coral' | 'grape';
+export type MascotColor = 'amber' | 'moss' | 'lagoon' | 'ash' | 'white' | 'blue' | 'coral' | 'grape' | 'black';
 export type MascotSize = 'xs' | 'sm' | 'md' | 'lg';
 export type MascotMood = 'open' | 'happy' | 'sleepy';
 export type MascotBlink = 'calm' | 'sleepy' | 'off';
@@ -29,6 +29,7 @@ const colorMap: Record<MascotColor, string> = {
   blue: 'bg-cta',
   coral: 'bg-bcoral',
   grape: 'bg-bgrape',
+  black: 'bg-black',
 };
 
 const sizeMap: Record<MascotSize, string> = {
@@ -73,22 +74,23 @@ export default function Mascot({
   label,
 }: MascotProps) {
   const blinkCls = mood === 'open' ? blinkMap[blink] : '';
+  const eyeColor = color === 'black' ? 'bg-white' : 'bg-navy';
 
   const eyes =
     mood === 'happy' ? (
       <>
-        <span className="absolute top-[42%] left-[22%] h-[10%] w-[24%] rounded-full bg-navy rotate-[25deg]" />
-        <span className="absolute top-[42%] right-[22%] h-[10%] w-[24%] rounded-full bg-navy -rotate-[25deg]" />
+        <span className="absolute top-[42%] left-[22%] h-[10%] w-[24%] rounded-full ${eyeColor} rotate-[25deg]" />
+        <span className="absolute top-[42%] right-[22%] h-[10%] w-[24%] rounded-full ${eyeColor} -rotate-[25deg]" />
       </>
     ) : mood === 'sleepy' ? (
       <>
-        <span className="absolute top-[46%] left-[22%] h-[7%] w-[26%] rounded-full bg-navy" />
-        <span className="absolute top-[46%] right-[22%] h-[7%] w-[26%] rounded-full bg-navy" />
+        <span className="absolute top-[46%] left-[22%] h-[7%] w-[26%] rounded-full ${eyeColor}" />
+        <span className="absolute top-[46%] right-[22%] h-[7%] w-[26%] rounded-full ${eyeColor}" />
       </>
     ) : (
       <>
-        <span className={`absolute top-[40%] left-[30%] h-[14%] w-[11%] rounded-full bg-navy ${blinkCls}`} style={blinkDelay ? { animationDelay: blinkDelay } : undefined} />
-        <span className={`absolute top-[40%] right-[30%] h-[14%] w-[11%] rounded-full bg-navy ${blinkCls}`} style={blinkDelay ? { animationDelay: blinkDelay } : undefined} />
+        <span className={`absolute top-[40%] left-[30%] h-[14%] w-[11%] rounded-full ${eyeColor} ${blinkCls}`} style={blinkDelay ? { animationDelay: blinkDelay } : undefined} />
+        <span className={`absolute top-[40%] right-[30%] h-[14%] w-[11%] rounded-full ${eyeColor} ${blinkCls}`} style={blinkDelay ? { animationDelay: blinkDelay } : undefined} />
       </>
     );
 

@@ -5,6 +5,10 @@
 /* Amplify UI base (Authenticator lives in the login panel). */
 @import '@aws-amplify/ui-react/styles.css';
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
@@ -33,6 +37,18 @@ body {
   .animate-mascot-blink,
   .animate-mascot-blink-slow,
   .animate-mascot-bob { animation: none; }
+}
+
+/* Teaser card entrance. */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.fade-up { animation: fade-up 0.35s ease both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-up { animation: none; }
 }
 
 /* Landing hero aurora (animated gradient + drifting orbs). */
