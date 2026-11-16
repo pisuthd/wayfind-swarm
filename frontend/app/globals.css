@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Amplify UI base (Authenticator lives in the login panel). */
+@import '@aws-amplify/ui-react/styles.css';
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+/* Wayfind mascot keyframes (reused from wayfind-one). */
+@keyframes mascot-blink {
+  0%, 91%, 100% { transform: scaleY(1); }
+  94%, 96% { transform: scaleY(0.08); }
+}
+
+@keyframes mascot-blink-slow {
+  0%, 88%, 100% { transform: scaleY(1); }
+  93%, 97% { transform: scaleY(0.08); }
+}
+
+@keyframes mascot-bob {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  50% { transform: translateY(-24px) rotate(5deg); }
+}
+
+.animate-mascot-blink { animation: mascot-blink 5.2s ease-in-out infinite; }
+.animate-mascot-blink-slow { animation: mascot-blink-slow 7.5s ease-in-out infinite; }
+.animate-mascot-bob { animation: mascot-bob 7s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-mascot-blink,
+  .animate-mascot-blink-slow,
+  .animate-mascot-bob { animation: none; }
+}
+
+/* Landing hero aurora (animated gradient + drifting orbs). */
+.aurora {
+  background:
+    radial-gradient(600px 400px at 15% 20%, rgba(47, 123, 255, 0.35), transparent 60%),
+    radial-gradient(500px 380px at 85% 30%, rgba(139, 92, 246, 0.30), transparent 60%),
+    radial-gradient(550px 420px at 50% 90%, rgba(16, 185, 129, 0.22), transparent 60%),
+    #0E1B2C;
+  background-size: 200% 200%, 200% 200%, 200% 200%, auto;
+  animation: aurora 14s ease-in-out infinite alternate;
+}
+
+@keyframes aurora {
+  from { background-position: 0% 0%, 100% 0%, 50% 100%, 0 0; }
+  to { background-position: 100% 100%, 0% 100%, 80% 0%, 0 0; }
+}
+
+.orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(70px);
+  opacity: 0.5;
+  animation: orb-drift 9s ease-in-out infinite alternate;
+}
+
+@keyframes orb-drift {
+  from { transform: translateY(-14px); }
+  to { transform: translateY(14px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora, .orb { animation: none; }
+}
