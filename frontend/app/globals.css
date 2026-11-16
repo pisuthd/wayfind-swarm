@@ -51,6 +51,11 @@ body {
   .fade-up { animation: none; }
 }
 
+/* Pricing band. */
+.band {
+  background: radial-gradient(600px 300px at 50% 0%, rgba(47, 123, 255, 0.22), transparent 65%), #0E1B2C;
+}
+
 /* Landing hero aurora (animated gradient + drifting orbs). */
 .aurora {
   background:

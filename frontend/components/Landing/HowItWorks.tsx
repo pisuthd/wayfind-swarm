@@ -1,38 +1,43 @@
 'use client';
 
-const steps = [
-  {
-    n: '01',
-    title: 'You describe the outcome',
-    body: 'One sentence is enough. No roles to pick, no prompts to write.',
-    active: true,
-  },
-  {
-    n: '02',
-    title: 'The team does the work',
-    body: 'Planned, built, and tested — with handoffs handled for you.',
-    active: false,
-  },
-  {
-    n: '03',
-    title: 'You approve the result',
-    body: 'Inspect progress anytime. Nothing ships without you.',
-    active: false,
-  },
-];
-
 export default function HowItWorks() {
   return (
-    <section id="how" className="border-t border-gray-100">
-      <div className="mx-auto max-w-6xl px-6 py-20">
-        <div className="grid gap-12 md:grid-cols-3 md:gap-8">
-          {steps.map((s) => (
-            <div key={s.n} className={`border-t-2 pt-6 ${s.active ? 'border-navy' : 'border-gray-200'}`}>
-              <p className="font-brico text-sm font-bold text-ink/60">{s.n}</p>
-              <p className="mt-3 font-brico text-2xl font-bold">{s.title}</p>
-              <p className="mt-3 leading-relaxed text-ink">{s.body}</p>
-            </div>
-          ))}
+    <section id="how" className="mx-auto max-w-3xl px-6 py-14 md:py-20">
+      <p className="text-center text-xs font-semibold uppercase tracking-[0.25em] text-ink/70">
+        How it works
+      </p>
+      <h2 className="mt-4 text-center font-brico text-4xl font-bold md:text-5xl">
+        It feels like texting your team.
+      </h2>
+      <div className="mx-auto mt-12 max-w-xl space-y-4">
+        <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-navy px-5 py-3.5 text-sm text-white">
+          Build me a booking page for my restaurant, with table management.
+        </div>
+        <div className="w-fit max-w-[85%] rounded-2xl rounded-bl-md bg-mist px-5 py-3.5 text-sm">
+          <span className="font-bold">PM</span>{' '}
+          <span className="text-ink">
+            · On it. <span className="font-semibold text-cta">@frontend</span> booking calendar with table
+            management, <span className="font-semibold text-cta">@backend</span> reservation API.
+          </span>
+        </div>
+        <div className="ml-8 w-fit max-w-[85%] rounded-2xl rounded-bl-md bg-mist px-5 py-3.5 text-sm">
+          <span className="font-bold">Frontend</span>{' '}
+          <span className="text-ink">
+            · <span className="font-semibold text-cta">@pm</span> done, calendar UI is live in the workspace.
+          </span>
+        </div>
+        <div className="ml-8 w-fit max-w-[85%] rounded-2xl rounded-bl-md bg-mist px-5 py-3.5 text-sm">
+          <span className="font-bold">QA</span>{' '}
+          <span className="text-ink">
+            · <span className="font-semibold text-cta">@pm</span> 14/14 browser tests pass.
+          </span>
+        </div>
+        <div className="w-fit max-w-[85%] rounded-2xl rounded-bl-md bg-mist px-5 py-3.5 text-sm">
+          <span className="font-bold">PM</span>{' '}
+          <span className="text-ink">· Calendar built, API wired, tests green. Approve to ship?</span>
+        </div>
+        <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-cta px-5 py-3.5 text-sm text-white">
+          Approved. Ship it.
         </div>
       </div>
     </section>

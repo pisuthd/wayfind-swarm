@@ -10,7 +10,9 @@ export default function Navbar({ onSignIn }: NavbarProps) {
   return (
     <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
       <div className="flex items-center gap-2.5">
-        <Mascot color="black" size="sm" motion="none" label="Wayfind mascot" />
+        <span className="grid h-9 w-9 place-items-center rounded-lg bg-navy">
+          <Mascot color="white" size="xs" motion="none" label="Wayfind mascot" />
+        </span>
         <span className="font-brico text-lg font-bold">Wayfind SWARM</span>
       </div>
       <div className="flex items-center gap-7 text-sm text-ink">

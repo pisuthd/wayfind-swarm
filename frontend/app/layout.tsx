@@ -16,9 +16,9 @@ const display = Sora({
 });
 
 export const metadata: Metadata = {
-  title: 'Wayfind SWARM — Hire an AI team',
+  title: 'Wayfind SWARM | Hire an AI team in one click',
   description:
-    'Hire an AI team. Get things done. Prebuilt teams with roles, collaboration workflows, and a shared workspace.',
+    'Give your business an AI team for software, marketing, operations, and more. Hired in one click, executing in disposable cloud sandboxes with a persistent shared workspace. Start free.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
