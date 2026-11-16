@@ -4,9 +4,10 @@ const rows = [
   { model: 'DeepSeek V4.1 Flash', from: '$0.30' },
   { model: 'GLM 5.3 Flash', from: '$0.45' },
   { model: 'Muse Spark Open', from: '$1.25' },
+  { model: 'Claude Haiku 5.5', from: '$0.15' },
+  { model: 'GPT-6 Luna', from: '$0.15' },
   { model: 'GLM 5.3', from: '$1.40' },
-  { model: 'Qwen3.8-Max', from: '$2.00' },
-  { model: 'Kimi K3', from: '$3.00' },
+  { model: 'Kimi K3.1 Pro', from: '$2.00' },
 ];
 
 export default function Pricing() {

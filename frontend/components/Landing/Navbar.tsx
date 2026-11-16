@@ -18,6 +18,9 @@ export default function Navbar({ onSignIn }: NavbarProps) {
       <div className="flex items-center gap-7 text-sm text-ink">
         <a href="#teams" className="hidden hover:text-navy md:inline">Teams</a>
         <a href="#how" className="hidden hover:text-navy md:inline">How it works</a>
+        <a href="#pricing" className="hidden hover:text-navy md:inline">Pricing</a>
+        <a href="/connectors" className="hidden hover:text-navy md:inline">Connectors</a>
+        <a href="/docs" className="hidden hover:text-navy md:inline">Docs</a>
         <button
           type="button"
           onClick={onSignIn}

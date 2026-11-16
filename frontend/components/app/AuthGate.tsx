@@ -5,6 +5,7 @@ import {
   Authenticator,
   Theme,
   ThemeProvider,
+  useAuthenticator,
   useTheme,
   View,
   Text,
@@ -58,20 +59,24 @@ const theme: Theme = {
   },
 };
 
-function AuthHeader() {
-  const { tokens } = useTheme();
+function BrandCard() {
   return (
-    <View textAlign="center" padding={tokens.space.large}>
-      <Link href="/" aria-label="Back to Wayfind SWARM home">
-        <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-          <span className="grid h-9 w-9 place-items-center rounded-lg bg-navy">
-            <Mascot color="white" size="xs" motion="none" label="Wayfind mascot" />
-          </span>
-          <span className="font-brico text-lg font-bold text-navy">Wayfind</span>
-        </View>
+    <section className="band relative hidden flex-col justify-between gap-5 overflow-hidden rounded-3xl p-10 text-white lg:flex lg:w-[45%]">
+      <Link href="/" aria-label="Back to Wayfind home" className="flex items-center gap-2.5">
+        <span className="grid h-9 w-9 place-items-center rounded-lg bg-white/10 ring-1 ring-white/20">
+          <Mascot color="white" size="xs" motion="none" label="Wayfind mascot" />
+        </span>
+        <span className="font-brico text-lg font-bold">Wayfind</span>
       </Link>
-      <Text color="#38506B" marginTop={tokens.space.small}>Sign in to meet your team.</Text>
-    </View>
+      <div>
+        <h2 className="max-w-md font-brico text-4xl font-bold leading-[1.05]">
+          Start with free credits.
+        </h2>
+        <p className="mt-4 max-w-md leading-relaxed text-white/70">
+          Try a full team before you spend anything. Free credits cover your first project end to end.
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -79,24 +84,46 @@ function AuthFooter() {
   const { tokens } = useTheme();
   return (
     <View textAlign="center" padding={tokens.space.large}>
-      <Text color={tokens.colors.neutral[80]}>Secured by AWS Cognito</Text>
+      <Text
+        color={tokens.colors.neutral[80]}
+        fontSize="12px"
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+      >
+        Secured by AWS Cognito
+      </Text>
     </View>
+  );
+}
+
+function GateInner({ children }: { children: React.ReactNode }) {
+  const { authStatus } = useAuthenticator((c) => [c.authStatus]);
+  if (authStatus === 'authenticated') return <>{children}</>;
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-mist px-6 py-10">
+      <div className="flex w-full max-w-6xl flex-col gap-6 lg:flex-row lg:items-center">
+        <BrandCard />
+        <section className="flex flex-1 items-center justify-center">
+          <div className="w-full max-w-md">
+            <Authenticator
+              socialProviders={['google']}
+              loginMechanisms={['email']}
+            components={{
+              Footer: AuthFooter,
+            }}
+            />
+          </div>
+        </section>
+      </div>
+    </main>
   );
 }
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider theme={theme}>
-      <Authenticator
-        socialProviders={['google']}
-        loginMechanisms={['email']}
-        components={{
-          Header: AuthHeader,
-          Footer: AuthFooter,
-        }}
-      >
-        {children}
-      </Authenticator>
+      <Authenticator.Provider>
+        <GateInner>{children}</GateInner>
+      </Authenticator.Provider>
     </ThemeProvider>
   );
 }
