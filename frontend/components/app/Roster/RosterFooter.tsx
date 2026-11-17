@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
-import { LogOut, Pencil, Plug, Receipt, Settings } from 'lucide-react';
+import { LogOut, Pencil, Receipt, Settings } from 'lucide-react';
 import { useAuthenticator } from '@aws-amplify/ui-react';
 import { fetchUserAttributes, signOut } from 'aws-amplify/auth';
 import { getOrCreateProfile, updateProfileName } from '@/lib/profile';
+import { useComputer } from './useComputer';
 import SettingsModal from './Settings';
 import UsageModal from './UsageModal';
+import ConnectorsModal from '../Connectors/ConnectorsModal';
 
 export default function RosterFooter() {
   const { user } = useAuthenticator((c) => [c.user]);
@@ -21,6 +23,9 @@ export default function RosterFooter() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
+  const [connectorsOpen, setConnectorsOpen] = useState(false);
+  const { computer } = useComputer();
+  const computerReady = computer?.provisionStatus === 'running' || computer?.provisionStatus === 'suspended';
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -206,17 +211,23 @@ export default function RosterFooter() {
           </button>
         </span>
         <button
-          disabled
-          title="Coming soon"
-          className="flex flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-full bg-white/60 py-2.5 font-semibold text-navy/50 shadow-sm"
+          onClick={() => setConnectorsOpen(true)}
+          className="flex flex-1 items-center justify-center gap-2.5 rounded-full bg-white py-2.5 font-semibold text-navy shadow-sm hover:bg-slate-50"
         >
-          <Plug className="h-4 w-4" strokeWidth={2.2} />
           Connectors
-          <span className="rounded-full bg-mist px-2 py-0.5 text-[10px] font-bold text-ink">Soon</span>
+          <span className="flex -space-x-1.5" aria-hidden="true">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/connectors/stripe.png" alt="" className="h-5 w-5 rounded-full bg-white object-contain ring-2 ring-white" loading="lazy" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/connectors/hubspot.png" alt="" className="h-5 w-5 rounded-full bg-white object-contain ring-2 ring-white" loading="lazy" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/connectors/mailchimp.png" alt="" className="h-5 w-5 rounded-full bg-white object-contain ring-2 ring-white" loading="lazy" />
+          </span>
         </button>
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <UsageModal open={usageOpen} onClose={() => setUsageOpen(false)} ownerId={user?.userId ?? null} />
+      <ConnectorsModal open={connectorsOpen} onClose={() => setConnectorsOpen(false)} computerReady={computerReady} />
     </div>
   );
 }
