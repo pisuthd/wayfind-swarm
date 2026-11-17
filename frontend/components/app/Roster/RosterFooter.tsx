@@ -7,6 +7,8 @@ import { LogOut, Pencil, Plug, Receipt, Settings } from 'lucide-react';
 import { useAuthenticator } from '@aws-amplify/ui-react';
 import { fetchUserAttributes, signOut } from 'aws-amplify/auth';
 import { getOrCreateProfile, updateProfileName } from '@/lib/profile';
+import SettingsModal from './Settings';
+import UsageModal from './UsageModal';
 
 export default function RosterFooter() {
   const { user } = useAuthenticator((c) => [c.user]);
@@ -17,6 +19,8 @@ export default function RosterFooter() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -158,23 +162,25 @@ export default function RosterFooter() {
                 <div className="mx-4 my-1 border-t border-navy/10" aria-hidden="true" />
                 <button
                   role="menuitem"
-                  disabled
-                  title="Coming soon"
-                  className="flex w-full cursor-not-allowed items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold text-navy/50"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setSettingsOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold text-navy hover:bg-ice"
                 >
                   <Settings className="h-4 w-4" strokeWidth={2.2} />
                   Settings
-                  <span className="ml-auto rounded-full bg-mist px-2 py-0.5 text-[10px] font-bold text-ink">Soon</span>
                 </button>
                 <button
                   role="menuitem"
-                  disabled
-                  title="Coming soon"
-                  className="flex w-full cursor-not-allowed items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold text-navy/50"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setUsageOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold text-navy hover:bg-ice"
                 >
                   <Receipt className="h-4 w-4" strokeWidth={2.2} />
                   Usage
-                  <span className="ml-auto rounded-full bg-mist px-2 py-0.5 text-[10px] font-bold text-ink">Soon</span>
                 </button>
                 <div className="mx-4 my-1 border-t border-navy/10" aria-hidden="true" />
                 <button
@@ -209,6 +215,8 @@ export default function RosterFooter() {
           <span className="rounded-full bg-mist px-2 py-0.5 text-[10px] font-bold text-ink">Soon</span>
         </button>
       </div>
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <UsageModal open={usageOpen} onClose={() => setUsageOpen(false)} ownerId={user?.userId ?? null} />
     </div>
   );
 }

@@ -365,7 +365,43 @@ export async function downloadViaApi(path: string): Promise<void> {
   }
 }
 
-// ---- Skills + MCP (per-bot pickers) ----
+// ---- Permissions (global guard rules) ----
+
+export interface PermissionRule {
+  permission: string;
+  pattern: string;
+  action: 'allow' | 'ask' | 'deny';
+}
+
+export async function getPermissions(): Promise<{ rules: PermissionRule[]; canUndo: boolean }> {
+  const res = await agentFetch(`/permissions`);
+  if (!res.ok) throw new Error(`agent /permissions → ${res.status}`);
+  return (await res.json()) as { rules: PermissionRule[]; canUndo: boolean };
+}
+
+export async function setPermissions(rules: PermissionRule[]): Promise<PermissionRule[]> {
+  const res = await agentFetch(`/permissions`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rules }),
+  });
+  if (!res.ok) {
+    const { error } = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(error ?? `agent /permissions → ${res.status}`);
+  }
+  const { rules: saved } = (await res.json()) as { rules: PermissionRule[] };
+  return saved;
+}
+
+/** Restore permissions to before the last save. Returns null when nothing to undo. */
+export async function undoPermissions(): Promise<{ rules: PermissionRule[]; canUndo: boolean } | null> {
+  const res = await agentFetch(`/permissions/undo`, { method: 'POST' });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`agent /permissions/undo → ${res.status}`);
+  return (await res.json()) as { rules: PermissionRule[]; canUndo: boolean };
+}
+
+// ---- Skills + MCP (settings tabs + per-bot pickers) ----
 
 export interface InstalledSkill {
   name: string;
@@ -394,9 +430,66 @@ export interface McpServer {
   lastError?: string;
 }
 
-/** Global MCP registry for the per-bot picker. */
+/** Remove an installed skill. Returns false when unknown. */
+export async function removeSkill(name: string): Promise<boolean> {
+  const res = await agentFetch(`/skills/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  return res.ok;
+}
+
+export interface McpServerInput {
+  command?: string[];
+  /** Claude-format split, e.g. command:"npx" + args:["-y","pkg"]. */
+  args?: string[];
+  /** Alias for environment (Claude-format configs). */
+  env?: Record<string, string>;
+  environment?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  isActive?: boolean;
+  disabledTools?: string[];
+}
+
+/** Global MCP registry for the settings tab + per-bot picker. */
 export async function getMcpServers(): Promise<McpServer[]> {
   const res = await agentFetch(`/mcp`);
   if (!res.ok) throw new Error(`agent /mcp → ${res.status}`);
   return ((await res.json()) as { servers: McpServer[] }).servers;
+}
+
+/** Add a server. Throws with the validation message on conflict. */
+export async function saveMcpServer(name: string, cfg: McpServerInput): Promise<McpServer[]> {
+  const res = await agentFetch(`/mcp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, ...cfg }),
+  });
+  const body = (await res.json()) as { servers?: McpServer[]; error?: string };
+  if (!res.ok) throw new Error(body.error ?? `agent /mcp → ${res.status}`);
+  return body.servers ?? [];
+}
+
+/** Partial update: toggle active, edit env/headers, disable tools. */
+export async function patchMcpServer(name: string, cfg: McpServerInput): Promise<McpServer[]> {
+  const res = await agentFetch(`/mcp/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cfg),
+  });
+  const body = (await res.json()) as { servers?: McpServer[]; error?: string };
+  if (!res.ok) throw new Error(body.error ?? `agent /mcp → ${res.status}`);
+  return body.servers ?? [];
+}
+
+/** Remove a server. Returns false when unknown. */
+export async function removeMcpServer(name: string): Promise<boolean> {
+  const res = await agentFetch(`/mcp/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  return res.ok;
+}
+
+/** Force-reconnect a server. Throws with the server's error message on failure. */
+export async function restartMcpServer(name: string): Promise<McpServer[]> {
+  const res = await agentFetch(`/mcp/${encodeURIComponent(name)}/restart`, { method: 'POST' });
+  const body = (await res.json()) as { servers?: McpServer[]; error?: string };
+  if (!res.ok) throw new Error(body.error ?? `agent /mcp → ${res.status}`);
+  return body.servers ?? [];
 }
