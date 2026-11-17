@@ -346,6 +346,25 @@ export function downloadFileUrl(path: string): string {
   return `${agentBase()}/files/download?path=${encodeURIComponent(path)}`;
 }
 
+/** Download a workspace file. The relay needs the Cognito bearer, which <a>
+ * cannot send — so fetch as blob and trigger the download programmatically. */
+export async function downloadViaApi(path: string): Promise<void> {
+  const res = await agentFetch(`/files/download?path=${encodeURIComponent(path)}`);
+  if (!res.ok) throw new Error(`agent /files/download → ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = path.split('/').pop() || 'download';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }
+}
+
 // ---- Skills + MCP (per-bot pickers) ----
 
 export interface InstalledSkill {

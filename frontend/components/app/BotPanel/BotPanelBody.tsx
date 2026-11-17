@@ -15,7 +15,7 @@ interface BotPanelBodyProps {
   onOpenTerminal: () => void;
 }
 
-export default function BotPanelBody({ value: v, botId, description, model, synced, onEdit, onOpenTerminal }: BotPanelBodyProps) {
+export default function BotPanelBody({ value: v, botId, ownerId, description, model, synced, onEdit, onOpenTerminal }: BotPanelBodyProps) {
   return (
     <>
       <button
@@ -35,7 +35,7 @@ export default function BotPanelBody({ value: v, botId, description, model, sync
       <p className="mt-5 truncate text-center text-lg font-bold text-navy">
         {v.name} <span className="text-sm font-medium text-heroslate">· {v.role || 'No role yet'}</span>
       </p>
-      <BotPanelTabs botId={botId} role={v.role} description={description} model={model} onOpenTerminal={onOpenTerminal} />
+      <BotPanelTabs botId={botId} ownerId={ownerId} role={v.role} description={description} model={model} onOpenTerminal={onOpenTerminal} />
     </>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Search, Plus } from 'lucide-react';
 import Mascot from '@/components/Mascot';
 
@@ -11,12 +12,12 @@ interface RosterHeaderProps {
 export default function RosterHeader({ onToggleSearch, onNew }: RosterHeaderProps) {
   return (
     <div className="flex items-center justify-between px-4 pb-3 pt-4">
-      <div className="flex shrink-0 items-center gap-2.5">
+      <Link href="/" aria-label="Back to Wayfind home" className="flex shrink-0 items-center gap-2.5 rounded-lg">
         <span className="grid h-9 w-9 place-items-center rounded-lg bg-navy">
           <Mascot color="white" size="xs" motion="none" label="Wayfind mascot" />
         </span>
         <span className="font-brico text-lg font-bold text-navy">Wayfind</span>
-      </div>
+      </Link>
       <div className="flex gap-2">
         <button
           onClick={onToggleSearch}
