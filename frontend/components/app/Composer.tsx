@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Send, Mic, Plus, Paperclip, X, FileText, Loader2, Shrink } from 'lucide-react';
+import { Send, Mic, Plus, Paperclip, X, FileText, Loader2 } from 'lucide-react';
 import ComposerMenu from './ComposerMenu';
 import VoiceModal from './VoiceModal';
 import VmImage from './VmImage';
@@ -279,16 +279,13 @@ export default function Composer({ botName, draft, onDraft, onSend, onVoiceSend,
             disabled={disabled || compacting}
             title={`${fmtCtxTokens(ctx.tokens)} of ${fmtCtxTokens(ctx.limit)} tokens on ${ctx.model} — click to compact`}
             aria-label={`Context ${ctx.pct}% used — compact now`}
-            className={`flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-bold disabled:opacity-50 ${ctxTone(ctx.pct)}`}
+            className={`flex h-7 shrink-0 items-center rounded-full px-2.5 text-[11px] font-bold disabled:opacity-50 ${ctxTone(ctx.pct)}`}
           >
             {compacting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Shrink className="h-3.5 w-3.5" strokeWidth={2.2} />
+              <span className="tabular-nums">{`${fmtCtxTokens(ctx.tokens)} (${ctx.pct}%)`}</span>
             )}
-            <span className="tabular-nums">
-              {compacting ? 'Compacting…' : `${fmtCtxTokens(ctx.tokens)} · ${ctx.pct}%`}
-            </span>
           </button>
         ) : (
           <span />
