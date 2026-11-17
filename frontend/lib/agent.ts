@@ -353,6 +353,42 @@ export async function clearContext(conversationId: string, model?: string): Prom
   return (await res.json()) as { cleared: boolean } & ContextStats;
 }
 
+// ---- Signed preview URLs (new-tab access without a bearer) ----
+
+export interface PreviewLink {
+  url: string;
+  scope: 'dev' | 'preview';
+  target: string;
+  /** Epoch ms — the link dies here. */
+  exp: number;
+}
+
+/** Mint a short-lived signed preview URL (opens in a new tab, no login
+ * headers needed). Dev = live server on the VM port; preview = built
+ * folder served by the agent. */
+export async function previewLink(scope: 'dev' | 'preview', target: string): Promise<PreviewLink> {
+  const res = await agentFetch(`/computer/proxy/preview-token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope, target }),
+  });
+  if (!res.ok) {
+    const { error } = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(error ?? `agent /preview-token → ${res.status}`);
+  }
+  const { sig, exp } = (await res.json()) as { sig: string; exp: number };
+  const base = agentBase();
+  const path =
+    scope === 'dev'
+      ? `dev/?port=${encodeURIComponent(target)}`
+      : `preview/${target
+          .replace(/^\/+|\/+$/g, '')
+          .split('/')
+          .map(encodeURIComponent)
+          .join('/')}/`;
+  return { url: `${base}/${path}?preview=${encodeURIComponent(sig)}`, scope, target, exp };
+}
+
 // ---- Files ----
 
 export interface FileEntry {
