@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Option 1 — One card</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: { navy:'#0E1B2C', ink:'#38506B', heroslate:'#38506B', ice:'#E9F1FA', cta:'#2F7BFF', ctahover:'#1F63DA', mist:'#F4F7FB', thread:'#F7FAFD' } } } };
+</script>
+<script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-thread min-h-screen p-6 font-sans">
+<div class="mx-auto max-w-[420px]">
+  <p class="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Option 1 — One card, everything inside</p>
+
+  <div class="rounded-2xl bg-white p-5 shadow-sm">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="grid h-9 w-9 place-items-center rounded-xl bg-navy text-white">
+          <i data-lucide="monitor" class="h-4.5 w-4.5"></i>
+        </div>
+        <div>
+          <p class="text-sm font-bold text-navy">Computer</p>
+          <p class="text-xs text-heroslate">bash · Alpine Linux</p>
+        </div>
+      </div>
+      <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-600">
+        <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>Online
+      </span>
+    </div>
+
+    <div class="my-4 h-px bg-slate-100"></div>
+
+    <p class="text-xs font-bold uppercase tracking-wider text-slate-400">Terminal</p>
+    <button class="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-navy py-2.5 text-sm font-bold text-white hover:opacity-90">
+      <i data-lucide="terminal" class="h-4 w-4"></i>Open terminal
+    </button>
+
+    <p class="mt-4 text-xs font-bold uppercase tracking-wider text-slate-400">Live preview</p>
+    <div class="mt-2 flex gap-2">
+      <div class="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-navy/15 px-3 py-2">
+        <i data-lucide="globe" class="h-4 w-4 shrink-0 text-slate-400"></i>
+        <input value="5173" class="w-full bg-transparent text-sm text-navy outline-none" aria-label="Dev server port" />
+      </div>
+      <button class="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-cta px-4 py-2 text-sm font-bold text-white hover:bg-ctahover">
+        <i data-lucide="external-link" class="h-4 w-4"></i>Open
+      </button>
+      <button class="grid h-9 w-9 shrink-0 place-items-center self-center rounded-xl bg-slate-100 text-heroslate hover:bg-slate-200" title="Copy link">
+        <i data-lucide="copy" class="h-4 w-4"></i>
+      </button>
+    </div>
+    <p class="mt-2 text-xs text-heroslate">Start the dev server from chat first, then open it here.</p>
+  </div>
+
+  <p class="mt-3 text-xs text-slate-500">Why: a single card reads as one product ("the computer"), not two features. Status pill answers "is it on?" at a glance.</p>
+</div>
+<script>lucide.createIcons();</script>
+</body>
+</html>

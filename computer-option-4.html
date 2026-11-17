@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Option 4 — Browser chrome</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: { navy:'#0E1B2C', ink:'#38506B', heroslate:'#38506B', ice:'#E9F1FA', cta:'#2F7BFF', ctahover:'#1F63DA', mist:'#F4F7FB', thread:'#F7FAFD' } } } };
+</script>
+<script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-thread min-h-screen p-6 font-sans">
+<div class="mx-auto max-w-[420px]">
+  <p class="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Option 4 — Mini browser window</p>
+
+  <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-navy/10">
+    <div class="flex items-center gap-1.5 bg-mist px-4 py-2.5">
+      <span class="h-2.5 w-2.5 rounded-full bg-[#FF5F57]"></span>
+      <span class="h-2.5 w-2.5 rounded-full bg-[#FEBC2E]"></span>
+      <span class="h-2.5 w-2.5 rounded-full bg-[#28C840]"></span>
+      <span class="ml-2 hidden items-center gap-1 text-[11px] font-semibold text-emerald-600 sm:inline-flex">
+        <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>Live
+      </span>
+    </div>
+    <div class="p-4">
+      <div class="flex items-center gap-2 rounded-full bg-mist px-3.5 py-2.5">
+        <i data-lucide="lock" class="h-3.5 w-3.5 shrink-0 text-emerald-500"></i>
+        <p class="min-w-0 flex-1 truncate font-mono text-xs text-heroslate">computer · port <span class="font-bold text-navy">5173</span></p>
+        <button class="shrink-0 text-xs font-bold text-slate-400 hover:text-navy">change</button>
+      </div>
+      <button class="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-cta py-2.5 text-sm font-bold text-white hover:bg-ctahover">
+        <i data-lucide="external-link" class="h-4 w-4"></i>Open in new tab
+      </button>
+      <div class="mt-2.5 flex items-center justify-center gap-4 text-xs font-semibold text-heroslate">
+        <button class="inline-flex items-center gap-1 hover:text-navy"><i data-lucide="copy" class="h-3.5 w-3.5"></i>Copy link</button>
+        <button class="inline-flex items-center gap-1 hover:text-navy"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>New link</button>
+      </div>
+    </div>
+  </div>
+
+  <button class="mt-2.5 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-navy/20 bg-white/60 py-3 text-sm font-bold text-navy hover:bg-white">
+    <i data-lucide="terminal" class="h-4 w-4"></i>Open terminal
+  </button>
+
+  <p class="mt-3 text-xs text-slate-500">Why: the browser-chrome metaphor teaches what preview <em>is</em> (a web page on the computer) before the user ever clicks. Terminal stays as a quiet dashed outline.</p>
+</div>
+<script>lucide.createIcons();</script>
+</body>
+</html>
