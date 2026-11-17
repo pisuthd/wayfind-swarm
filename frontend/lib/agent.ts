@@ -367,7 +367,7 @@ export interface PreviewLink {
  * headers needed). Dev = live server on the VM port; preview = built
  * folder served by the agent. */
 export async function previewLink(scope: 'dev' | 'preview', target: string): Promise<PreviewLink> {
-  const res = await agentFetch(`/computer/proxy/preview-token`, {
+  const res = await agentFetch(`/preview-token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ scope, target }),
