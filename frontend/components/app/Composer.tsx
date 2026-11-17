@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Send, Mic, Plus, Paperclip, X, FileText, Loader2 } from 'lucide-react';
+import { Send, Mic, Plus, Paperclip, X, FileText, Loader2, Shrink } from 'lucide-react';
 import ComposerMenu from './ComposerMenu';
 import VoiceModal from './VoiceModal';
 import VmImage from './VmImage';
-import { uploadFile, viewFileUrl } from '@/lib/agent';
+import ModelPicker from './ModelPicker';
+import { uploadFile, viewFileUrl, type ContextStats } from '@/lib/agent';
 
 interface ComposerProps {
   botName: string;
@@ -25,6 +26,14 @@ interface ComposerProps {
   disabledHint?: string;
   /** Retry the computer start (shown when disabled and provided). */
   onRetry?: () => void;
+  /** Bot.model — null = account default. */
+  model?: string | null;
+  onModelChange?: (model: string | null) => void;
+  /** Context usage for this bot's conversation (null = unknown/loading). */
+  ctx?: ContextStats | null;
+  /** Compact the context now. */
+  onCompact?: () => void;
+  compacting?: boolean;
 }
 
 /** Trailing @mention being typed, e.g. "@Re" in "ask @Re". Null when none. */
@@ -33,7 +42,19 @@ function mentionQuery(draft: string): string | null {
   return m ? m[1] : null;
 }
 
-export default function Composer({ botName, draft, onDraft, onSend, onVoiceSend, onOpenSkills, onOpenMcp, ownerId, mentionNames = [], disabled = false, disabledHint, onRetry }: ComposerProps) {
+export function fmtCtxTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return `${n}`;
+}
+
+function ctxTone(pct: number): string {
+  if (pct >= 90) return 'bg-red-100 text-red-700 hover:bg-red-200';
+  if (pct >= 70) return 'bg-bamber/25 text-navy hover:bg-bamber/40';
+  return 'bg-slate-100 text-heroslate hover:bg-slate-200';
+}
+
+export default function Composer({ botName, draft, onDraft, onSend, onVoiceSend, onOpenSkills, onOpenMcp, ownerId, mentionNames = [], disabled = false, disabledHint, onRetry, model, onModelChange, ctx, onCompact, compacting = false }: ComposerProps) {
   const [plusOpen, setPlusOpen] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
   // Staged attachments: uploaded to the workspace immediately (they live
@@ -245,9 +266,34 @@ export default function Composer({ botName, draft, onDraft, onSend, onVoiceSend,
       {voiceOpen && (
         <VoiceModal onVoiceSend={onVoiceSend} onClose={() => setVoiceOpen(false)} ownerId={ownerId} />
       )}
-      <p className="mx-auto mt-2 max-w-2xl text-center text-xs text-slate-400">
-        Early access is free with limited usage. We&apos;ll let you know when paid plans arrive.
-      </p>
+      <div className="mx-auto mt-1.5 flex max-w-2xl items-center justify-between px-1">
+        <span className="min-w-0">
+          {onModelChange && (
+            <ModelPicker value={model ?? null} onChange={onModelChange} disabled={disabled} compact />
+          )}
+        </span>
+        {ctx && onCompact ? (
+          <button
+            type="button"
+            onClick={onCompact}
+            disabled={disabled || compacting}
+            title={`${fmtCtxTokens(ctx.tokens)} of ${fmtCtxTokens(ctx.limit)} tokens on ${ctx.model} — click to compact`}
+            aria-label={`Context ${ctx.pct}% used — compact now`}
+            className={`flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-bold disabled:opacity-50 ${ctxTone(ctx.pct)}`}
+          >
+            {compacting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Shrink className="h-3.5 w-3.5" strokeWidth={2.2} />
+            )}
+            <span className="tabular-nums">
+              {compacting ? 'Compacting…' : `${fmtCtxTokens(ctx.tokens)} · ${ctx.pct}%`}
+            </span>
+          </button>
+        ) : (
+          <span />
+        )}
+      </div>
     </div>
   );
 }

@@ -18,13 +18,19 @@ import { ensureComputerStart, refreshComputer, retryComputerStart, useComputer }
 import {
   answerBotRequest,
   answerQuestion,
+  clearContext,
+  compactContext,
   decideApproval,
+  getContextStats,
   getHistory,
   pollPending,
   postTask,
   streamRunProgressive,
   summarizeRole,
+  type ContextStats,
 } from '@/lib/agent';
+import { fmtCtxTokens } from './Composer';
+import { friendlyModelName } from '@/lib/models';
 import { FOLLOW_UP_NO, isImageProgress, type Msg } from '@/lib/chat';
 
 const validColors: MascotColor[] = ['amber', 'moss', 'lagoon', 'ash', 'blue', 'coral', 'grape'];
@@ -43,6 +49,12 @@ const lookPool: { color: MascotColor; shape: MascotShape }[] = [
 // Bots already greeted this session (module-level: survives remounts and
 // StrictMode double-effects so the hello run fires exactly once per bot).
 const helloAttempted = new Set<string>();
+
+/** Model label for tool rows ("Muse Spark Open" or "account default"). */
+function modelLabel(m: string | null | undefined): string {
+  if (!m) return 'account default';
+  return friendlyModelName(m);
+}
 
 type ViewBot = RosterBot & {
   id: string;
@@ -94,6 +106,8 @@ export default function AppShell() {
   const [draft, setDraft] = useState('');
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [ctxById, setCtxById] = useState<Record<string, ContextStats>>({});
+  const [compacting, setCompacting] = useState(false);
 
   useEffect(() => {
     const ownerId = user?.userId;
@@ -160,6 +174,7 @@ export default function AppShell() {
         if (!alive) return;
         if (history.length === 0) {
           greetBot(b);
+          refreshCtx(b.id, b.model ?? undefined);
           return;
         }
         patchBot(cur, (prev) =>
@@ -180,7 +195,8 @@ export default function AppShell() {
                   ),
               },
         );
-      } catch (err) {
+          refreshCtx(b.id, b.model ?? undefined);
+        } catch (err) {
         // 410 = VM gone mid-recycle — the computer-gone broadcast already
         // scheduled recovery, not worth a console error per bot.
         const msg = err instanceof Error ? err.message : String(err);
@@ -202,11 +218,70 @@ export default function AppShell() {
   const patchBotById = (id: string, fn: (b: ViewBot) => ViewBot) =>
     setBots((prev) => prev.map((b) => (b.id === id ? fn(b) : b)));
 
+  // Refresh the context pill for a bot (best-effort — the pill hides on failure).
+  const refreshCtx = (botId: string, model?: string | null) => {
+    if (!computerReady) return;
+    void getContextStats(botId, model ?? undefined)
+      .then((s) => setCtxById((prev) => ({ ...prev, [botId]: s })))
+      .catch(() => {});
+  };
+
   const send = (attachments: string[] = []) => sendText(draft, attachments);
+
+  // Compact this bot's context now (button or /compact command). No model
+  // run is spent — the endpoint summarizes server-side.
+  const compactNow = (includeUserBubble: boolean) => {
+    if (!bot || bot.busy || compacting) return;
+    const targetIndex = cur;
+    const targetId = bot.id;
+    const targetModel = bot.model ?? undefined;
+    setDraft('');
+    setCompacting(true);
+    patchBot(targetIndex, (b) => ({
+      ...b,
+      busy: true,
+      msgs: includeUserBubble ? [...b.msgs, { t: 'u', x: '/compact' }, { t: 'typing' }] : [...b.msgs, { t: 'typing' }],
+    }));
+    const patchTarget = (fn: (b: ViewBot) => ViewBot) => patchBotById(targetId, fn);
+    void (async () => {
+      try {
+        const out = await compactContext(targetId, targetModel);
+        patchTarget((b) => ({
+          ...b,
+          busy: false,
+          msgs: [
+            ...b.msgs.filter((m) => m.t !== 'typing'),
+            {
+              t: 'tool',
+              x: out.compacted
+                ? `Context compacted — ${out.note} (${fmtCtxTokens(out.tokens)} · ${out.pct}%)`
+                : `Context kept — ${out.note} (${fmtCtxTokens(out.tokens)} · ${out.pct}%)`,
+            },
+          ],
+        }));
+        setCtxById((prev) => ({ ...prev, [targetId]: out }));
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        console.error('[AppShell] compact failed:', detail);
+        patchTarget((b) => ({
+          ...b,
+          busy: false,
+          msgs: [...b.msgs.filter((m) => m.t !== 'typing'), { t: 'b', x: `Compact failed: ${detail.slice(0, 200)}` }],
+        }));
+      } finally {
+        setCompacting(false);
+      }
+    })();
+  };
 
   const sendText = (raw: string, attachments: string[] = [], opts?: { hello?: boolean }) => {
     const v = raw.trim();
     if ((!v && attachments.length === 0) || !bot || bot.busy) return;
+    // Slash command: compact without spending a model run.
+    if (v.toLowerCase() === '/compact' && attachments.length === 0 && !opts?.hello) {
+      compactNow(true);
+      return;
+    }
     const targetIndex = cur;
     const targetId = bot.id;
     const targetName = bot.name;
@@ -214,6 +289,7 @@ export default function AppShell() {
     const targetIsChief = bot.isChiefOfStaff ?? false;
     const targetSkills = bot.skillsEnabled;
     const targetMcp = bot.mcpEnabled;
+    const targetModel = bot.model ?? undefined;
     setDraft('');
     // Hello runs are bot-initiated: no user bubble, just the typing row.
     // Failures stay silent so the thread simply starts empty.
@@ -243,6 +319,7 @@ export default function AppShell() {
           .catch(() => undefined);
         const runId = await postTask(v, targetId ?? undefined, system, targetSkills ?? undefined, targetMcp ?? undefined, {
           canManageBots: targetIsChief,
+          ...(targetModel ? { model: targetModel } : {}),
           // Chief: the model sees every bot so it can propose and @mention them.
           // Member: the model sees the chief only — it can escalate/consult, nothing else.
           roster: targetIsChief
@@ -345,6 +422,7 @@ export default function AppShell() {
           }
           return { ...b, busy: false, msgs };
         });
+        refreshCtx(targetId, targetModel);
         // First chat defines the role (skipped for hello runs — the intro
         // text must never be summarized into a role): AI compresses the
         // user's job description into a short label and saves it (manual
@@ -374,6 +452,7 @@ export default function AppShell() {
             ? [...b.msgs.filter((m) => m.t !== 'typing')]
             : [...b.msgs.filter((m) => m.t !== 'typing'), { t: 'b', x: `That run failed: ${detail.slice(0, 300)}` }],
         }));
+        refreshCtx(targetId, targetModel);
       }
     })();
   };
@@ -524,6 +603,28 @@ export default function AppShell() {
       setSideOpen(false);
     }
     return error;
+  };
+
+  // Model switch: persist to the bot, then reset the session — a new model
+  // starts with a fresh context (selections are per-conversation).
+  const changeModel = (model: string | null) => {
+    const target = bots[cur];
+    if (!target || target.busy || (target.model ?? null) === (model ?? null)) return;
+    const targetId = target.id;
+    void (async () => {
+      try {
+        await updateBotRow(targetId, { model });
+        patchBotById(targetId, (b) => ({ ...b, model }));
+        const cleared = await clearContext(targetId, model ?? undefined);
+        patchBotById(targetId, (b) => ({
+          ...b,
+          msgs: [...b.msgs, { t: 'tool', x: `Context reset — fresh session on ${modelLabel(model)}.` }],
+        }));
+        setCtxById((prev) => ({ ...prev, [targetId]: cleared }));
+      } catch (err) {
+        console.error('[AppShell] model switch failed:', err instanceof Error ? err.message : err);
+      }
+    })();
   };
 
   const saveBotSkills = (enabled: string[] | null) => {
@@ -723,6 +824,11 @@ export default function AppShell() {
         onVoiceSend={(text) => sendText(text, [])}
         onOpenSkills={() => setSkillsOpen(true)}
         onOpenMcp={() => setMcpOpen(true)}
+        model={bot.model ?? null}
+        onModelChange={changeModel}
+        ctx={bot.id ? (ctxById[bot.id] ?? null) : null}
+        onCompact={() => compactNow(false)}
+        compacting={compacting}
         ownerId={user?.userId}
         mentionNames={(() => {
           if (bot.isChiefOfStaff) return bots.filter((b) => b.id && b.id !== bot.id).map((b) => b.name);

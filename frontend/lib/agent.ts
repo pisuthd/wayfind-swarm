@@ -46,7 +46,7 @@ export async function postTask(
   system?: string,
   allowedSkills?: string[],
   allowedMcp?: string[],
-  opts?: { canManageBots?: boolean; roster?: RosterBot[]; botName?: string; attachments?: string[]; ownerId?: string; idToken?: string },
+  opts?: { canManageBots?: boolean; roster?: RosterBot[]; botName?: string; attachments?: string[]; ownerId?: string; idToken?: string; model?: string },
 ): Promise<string> {
   // The VM reports metered usage to the backend itself; hand it the API
   // base (the backend can't know its own Function URL).
@@ -66,6 +66,7 @@ export async function postTask(
       allowedSkills,
       allowedMcp,
       canManageBots: opts?.canManageBots === true,
+      ...(opts?.model ? { model: opts.model } : {}),
       ...(opts?.roster ? { roster: opts.roster } : {}),
       ...(opts?.botName ? { botName: opts.botName } : {}),
       ...(opts?.attachments?.length ? { attachments: opts.attachments } : {}),
@@ -308,6 +309,50 @@ export async function getHistory(conversationId: string): Promise<HistoryMessage
   return messages;
 }
 
+// ---- Context (per-conversation usage, compact, reset) ----
+
+export interface ContextStats {
+  tokens: number;
+  limit: number;
+  /** Percent of limit used. */
+  pct: number;
+  model: string;
+  provider: string;
+  items: number;
+}
+
+export interface CompactResult extends ContextStats {
+  compacted: boolean;
+  note: string;
+}
+
+/** Current context usage for a bot's conversation. */
+export async function getContextStats(conversationId: string, model?: string): Promise<ContextStats> {
+  const q = model ? `?model=${encodeURIComponent(model)}` : '';
+  const res = await agentFetch(`/context/${conversationId}${q}`);
+  if (!res.ok) throw new Error(`agent /context → ${res.status}`);
+  return (await res.json()) as ContextStats;
+}
+
+/** Condense a conversation's history (tail kept verbatim). */
+export async function compactContext(conversationId: string, model?: string): Promise<CompactResult> {
+  const q = model ? `?model=${encodeURIComponent(model)}` : '';
+  const res = await agentFetch(`/context/${conversationId}${q}`, { method: 'POST' });
+  if (!res.ok) {
+    const { error } = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(error ?? `agent /context compact → ${res.status}`);
+  }
+  return (await res.json()) as CompactResult;
+}
+
+/** Drop a conversation's session (fresh context). Returns fresh stats. */
+export async function clearContext(conversationId: string, model?: string): Promise<{ cleared: boolean } & ContextStats> {
+  const q = model ? `?model=${encodeURIComponent(model)}` : '';
+  const res = await agentFetch(`/context/${conversationId}${q}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`agent /context clear → ${res.status}`);
+  return (await res.json()) as { cleared: boolean } & ContextStats;
+}
+
 // ---- Files ----
 
 export interface FileEntry {
@@ -399,6 +444,26 @@ export async function undoPermissions(): Promise<{ rules: PermissionRule[]; canU
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`agent /permissions/undo → ${res.status}`);
   return (await res.json()) as { rules: PermissionRule[]; canUndo: boolean };
+}
+
+// ---- Providers (model catalog for the picker) ----
+
+export interface ProviderInfo {
+  baseURL: string;
+  keyConfigured: boolean;
+  keystore: string;
+  models: string[];
+}
+
+export interface ProvidersState {
+  defaults: { provider?: string; model?: string } | null;
+  providers: Record<string, ProviderInfo>;
+}
+
+export async function getProviders(): Promise<ProvidersState> {
+  const res = await agentFetch(`/providers`);
+  if (!res.ok) throw new Error(`agent /providers → ${res.status}`);
+  return (await res.json()) as ProvidersState;
 }
 
 // ---- Skills + MCP (settings tabs + per-bot pickers) ----
