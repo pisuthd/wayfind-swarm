@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check, ChevronUp, Cpu, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { getProviders } from '@/lib/agent';
@@ -22,19 +22,24 @@ interface Option {
 
 /** Model pill for the composer bar. Dropdown opens upward, options from the
  * computer's provider catalog plus an account-default entry. */
+/** Catalog default when the computer is unreachable (mirrors providers.json). */
+const FALLBACK_DEFAULT = 'zai-org/GLM-5.3-Flash';
+
 export default function ModelPicker({ value, onChange, disabled = false, compact = false }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   const [options, setOptions] = useState<Option[] | null>(null);
+  const [defaultId, setDefaultId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!open || options) return;
     let alive = true;
     setError('');
     getProviders()
       .then((s) => {
         if (!alive) return;
-        const opts: Option[] = [{ value: null, label: 'Account default' }];
+        const def = s.defaults?.model ?? FALLBACK_DEFAULT;
+        setDefaultId(def);
+        const opts: Option[] = [{ value: null, label: `Default · ${friendlyModelName(def)}` }];
         for (const p of Object.values(s.providers ?? {})) {
           for (const m of p.models ?? []) {
             if (opts.some((o) => o.value === m)) continue;
@@ -48,13 +53,17 @@ export default function ModelPicker({ value, onChange, disabled = false, compact
         setOptions(opts);
       })
       .catch((err) => {
-        if (alive) setError(err instanceof Error ? err.message : 'Could not load models');
+        if (alive) {
+          setError(err instanceof Error ? err.message : 'Could not load models');
+          setDefaultId(FALLBACK_DEFAULT);
+          setOptions([{ value: null, label: `Default · ${friendlyModelName(FALLBACK_DEFAULT)}` }]);
+        }
       });
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open ]);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -65,7 +74,20 @@ export default function ModelPicker({ value, onChange, disabled = false, compact
     return () => document.removeEventListener('keydown', onKey);
   }, [open]);
 
-  const currentLabel = value ? friendlyModelName(value) : 'Default';
+  // The bot's saved model may predate the catalog — keep it selectable.
+  const merged = useMemo(() => {
+    if (!options) return null;
+    if (value && !options.some((o) => o.value === value)) {
+      return [...options, { value, label: friendlyModelName(value) }];
+    }
+    return options;
+  }, [options, value]);
+
+  const currentLabel = value
+    ? friendlyModelName(value)
+    : defaultId
+      ? `Default · ${friendlyModelName(defaultId)}`
+      : 'Default';
 
   return (
     <div className="relative shrink-0">
@@ -82,13 +104,13 @@ export default function ModelPicker({ value, onChange, disabled = false, compact
               role="menu"
               aria-label="Choose model"
             >
-              {!options && !error && (
+              {!merged && !error && (
                 <p className="flex items-center gap-2 px-3 py-2.5 text-sm text-heroslate">
                   <Loader2 className="h-4 w-4 animate-spin" /> Loading models…
                 </p>
               )}
               {error && <p className="px-3 py-2.5 text-sm font-medium text-red-600">{error}</p>}
-              {options?.map((o) => {
+              {merged?.map((o) => {
                 const active = (o.value ?? null) === (value ?? null);
                 return (
                   <button
