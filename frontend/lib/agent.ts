@@ -386,7 +386,9 @@ export async function previewLink(scope: 'dev' | 'preview', target: string): Pro
           .split('/')
           .map(encodeURIComponent)
           .join('/')}/`;
-  return { url: `${base}/${path}?preview=${encodeURIComponent(sig)}`, scope, target, exp };
+  // The dev path already carries ?port= — join with & so ?preview= parses.
+  const sep = path.includes('?') ? '&' : '?';
+  return { url: `${base}/${path}${sep}preview=${encodeURIComponent(sig)}`, scope, target, exp };
 }
 
 // ---- Files ----
