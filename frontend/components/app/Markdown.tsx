@@ -1,0 +1,70 @@
+'use client';
+
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github.css';
+import VmImage, { normalizeSrc } from './VmImage';
+
+/** Generated image with tap-to-enlarge. The overlay reuses VmImage (bearer
+ * included) instead of a new-tab link, which could not carry auth and 401'd. */
+function ZoomableImage({ src, alt, className }: { src: string; alt: string; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const full = normalizeSrc(src);
+  // Portal into body: message rows animate with transforms, which trap
+  // position:fixed descendants — without the portal the overlay would clip
+  // to the chat bubble instead of covering the screen.
+  const overlay =
+    open && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            role="dialog"
+            aria-label={alt}
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-50 grid cursor-zoom-out place-items-center bg-navy/80 p-4"
+          >
+            <VmImage src={full} alt={alt} className="max-h-[85vh] w-auto max-w-full rounded-xl object-contain" />
+          </div>,
+          document.body,
+        )
+      : null;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Open full size"
+        className="block w-full cursor-zoom-in"
+      >
+        <VmImage src={full} alt={alt} className={className} />
+      </button>
+      {overlay}
+    </>
+  );
+}
+
+/** Markdown for bot messages: GFM + code highlight, compact chat styling. */
+export default function Markdown({ text }: { text: string }) {
+  return (
+    <div className="prose prose-sm max-w-none break-words text-navy prose-p:my-1 prose-p:leading-relaxed prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-code:rounded prose-code:bg-ice prose-code:px-1 prose-code:py-0.5 prose-code:text-[13px] prose-code:before:content-none prose-code:after:content-none prose-pre:my-2 prose-pre:rounded-xl prose-pre:bg-navy prose-pre:text-[13px] prose-a:font-semibold prose-a:text-cta prose-strong:text-navy prose-headings:my-2 prose-headings:text-navy">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeHighlight]}
+        components={{
+          // Generated images render inline; tap opens full size in-app.
+          img: ({ src, alt }) => (
+            <ZoomableImage
+              src={typeof src === 'string' ? src : ''}
+              alt={typeof alt === 'string' ? alt : ''}
+              className="my-2 max-h-96 w-full rounded-xl object-cover"
+            />
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+}

@@ -3,13 +3,29 @@
 import { useEffect, useState } from 'react';
 import { Menu, PanelRight } from 'lucide-react';
 import { useAuthenticator } from '@aws-amplify/ui-react';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import type { MascotColor, MascotShape } from '@/components/Mascot';
 import Mascot from '@/components/Mascot';
 import Roster, { type RosterBot } from './Roster';
 import NewBotModal from './Roster/NewBotModal';
 import BotPanel, { type BotEdits } from './BotPanel';
+import Thread from './Thread';
+import Composer from './Composer';
+import SkillsPickerModal from './SkillsPickerModal';
+import McpPickerModal from './McpPickerModal';
 import { createBotRow, deleteBotRow, listBotsByOwner, updateBotRow } from '@/lib/bots';
 import { ensureComputerStart, refreshComputer, retryComputerStart, useComputer } from './Roster/useComputer';
+import {
+  answerBotRequest,
+  answerQuestion,
+  decideApproval,
+  getHistory,
+  pollPending,
+  postTask,
+  streamRunProgressive,
+  summarizeRole,
+} from '@/lib/agent';
+import { FOLLOW_UP_NO, isImageProgress, type Msg } from '@/lib/chat';
 
 const validColors: MascotColor[] = ['amber', 'moss', 'lagoon', 'ash', 'blue', 'coral', 'grape'];
 const validShapes: MascotShape[] = ['blob', 'circle', 'squircle', 'pebble'];
@@ -24,7 +40,17 @@ const lookPool: { color: MascotColor; shape: MascotShape }[] = [
   { color: 'grape', shape: 'squircle' },
 ];
 
-type ViewBot = RosterBot & { id: string };
+// Bots already greeted this session (module-level: survives remounts and
+// StrictMode double-effects so the hello run fires exactly once per bot).
+const helloAttempted = new Set<string>();
+
+type ViewBot = RosterBot & {
+  id: string;
+  skillsEnabled: string[] | null;
+  mcpEnabled: string[] | null;
+  busy: boolean;
+  msgs: Msg[];
+};
 
 function toViewBot(r: {
   id: string;
@@ -35,6 +61,8 @@ function toViewBot(r: {
   color?: string | null;
   shape?: string | null;
   isChiefOfStaff?: boolean | null;
+  skillsEnabled?: string[] | null;
+  mcpEnabled?: string[] | null;
 }): ViewBot {
   return {
     id: r.id,
@@ -45,6 +73,10 @@ function toViewBot(r: {
     color: validColors.includes(r.color as MascotColor) ? (r.color as MascotColor) : 'amber',
     shape: validShapes.includes(r.shape as MascotShape) ? (r.shape as MascotShape) : 'blob',
     isChiefOfStaff: r.isChiefOfStaff ?? false,
+    skillsEnabled: r.skillsEnabled ?? null,
+    mcpEnabled: r.mcpEnabled ?? null,
+    busy: false,
+    msgs: [],
   };
 }
 
@@ -59,6 +91,9 @@ export default function AppShell() {
   const [sideOpen, setSideOpen] = useState(false);
   const [botModalOpen, setBotModalOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
 
   useEffect(() => {
     const ownerId = user?.userId;
@@ -91,12 +126,15 @@ export default function AppShell() {
     return () => clearInterval(t);
   }, [user?.userId]);
 
-  const q = query.toLowerCase();
-  const items = bots
-    .map((bot, index) => ({ bot, index }))
-    .filter(({ bot }) => !q || `${bot.name}${bot.role}`.toLowerCase().includes(q));
-
-  const bot = bots[cur] ?? bots[0];
+  // The VM is gone mid-chat (relay 410/404): flip to reconnecting and
+  // auto-reprovision instead of green-but-dead UI.
+  useEffect(() => {
+    const onGone = () => {
+      void refreshComputer(true);
+    };
+    window.addEventListener('wayfind:computer-gone', onGone);
+    return () => window.removeEventListener('wayfind:computer-gone', onGone);
+  }, []);
 
   const computerStatus = computer?.provisionStatus ?? 'unknown';
   const computerReady = computerStatus === 'running' || computerStatus === 'suspended';
@@ -106,12 +144,300 @@ export default function AppShell() {
       ? 'Booting your computer…'
       : 'Setting up your computer…';
 
-  const createBot = async (name: string, isChief: boolean): Promise<string | null> => {
-    const ownerId = user?.userId;
-    if (!ownerId) return 'Not signed in. Please sign in again.';
-    if (bots.some((b) => b.name.toLowerCase() === name.toLowerCase())) {
-      return `A bot named "${name}" already exists — pick another name.`;
+  const bot = bots[cur] ?? bots[0];
+
+  // Hydrate per-bot history from the agent server (each Bot id is its
+  // conversation). Skipped while the computer isn't ready: history lives on
+  // the VM, so a missing VM would just fail — the effect re-runs when ready.
+  useEffect(() => {
+    if (!computerReady) return;
+    const b = bots[cur];
+    if (!b?.id || b.msgs.length > 0) return;
+    let alive = true;
+    void (async () => {
+      try {
+        const history = await getHistory(b.id);
+        if (!alive) return;
+        if (history.length === 0) {
+          greetBot(b);
+          return;
+        }
+        patchBot(cur, (prev) =>
+          prev.msgs.length > 0
+            ? prev
+            : {
+                ...prev,
+                // Drop stale image-progress rows — the skeleton only
+                // lives while a run is in flight.
+                msgs: history
+                  .filter((m) => !(m.role === 'tool' && isImageProgress(m.text)))
+                  .map((m) =>
+                    m.role === 'assistant'
+                      ? { t: 'b' as const, x: m.text }
+                      : m.role === 'tool'
+                        ? { t: 'tool' as const, x: m.text }
+                        : { t: 'u' as const, x: m.text },
+                  ),
+              },
+        );
+      } catch (err) {
+        // 410 = VM gone mid-recycle — the computer-gone broadcast already
+        // scheduled recovery, not worth a console error per bot.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/→ 410/.test(msg)) console.error('[AppShell] history fetch failed:', err);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cur, bots[cur]?.id, bots[cur]?.msgs.length, computerReady]);
+
+  const patchBot = (index: number, fn: (b: ViewBot) => ViewBot) =>
+    setBots((prev) => prev.map((b, i) => (i === index ? fn(b) : b)));
+
+  // Index-stable patching for in-flight runs: roster inserts (chief-created
+  // bots prepend) shift indices mid-stream, so everything after the
+  // synchronous optimistic update patches by bot id.
+  const patchBotById = (id: string, fn: (b: ViewBot) => ViewBot) =>
+    setBots((prev) => prev.map((b) => (b.id === id ? fn(b) : b)));
+
+  const send = (attachments: string[] = []) => sendText(draft, attachments);
+
+  const sendText = (raw: string, attachments: string[] = [], opts?: { hello?: boolean }) => {
+    const v = raw.trim();
+    if ((!v && attachments.length === 0) || !bot || bot.busy) return;
+    const targetIndex = cur;
+    const targetId = bot.id;
+    const targetName = bot.name;
+    const targetRole = bot.role;
+    const targetIsChief = bot.isChiefOfStaff ?? false;
+    const targetSkills = bot.skillsEnabled;
+    const targetMcp = bot.mcpEnabled;
+    setDraft('');
+    // Hello runs are bot-initiated: no user bubble, just the typing row.
+    // Failures stay silent so the thread simply starts empty.
+    const hello = opts?.hello === true;
+    patchBot(targetIndex, (b) => ({
+      ...b,
+      busy: true,
+      msgs: hello ? [...b.msgs, { t: 'typing' }] : [...b.msgs, { t: 'u', x: v || '(attached files)', ...(attachments.length > 0 ? { files: attachments } : {}) }, { t: 'typing' }],
+    }));
+    // Stable identity for the whole run: roster inserts shift indices, so
+    // every patch below keys on the bot id. Falls back to the captured
+    // index only when the bot has no id yet (local-only, pre-save).
+    const patchTarget = (fn: (b: ViewBot) => ViewBot) =>
+      targetId ? patchBotById(targetId, fn) : patchBot(targetIndex, fn);
+    void (async () => {
+      const finish = (fn: (b: ViewBot) => ViewBot) => patchTarget((b) => ({ ...fn(b), busy: false }));
+      try {
+        const system = targetId
+          ? targetRole
+            ? `You are "${targetName}". Role: ${targetRole}.`
+            : `You are "${targetName}". Your role is not defined yet.`
+          : undefined;
+        // User JWT for backend-authenticated agent tools (e.g.
+        // schedule_task). Forwarded only — never logged or persisted.
+        const idToken = await fetchAuthSession()
+          .then((s) => s.tokens?.idToken?.toString())
+          .catch(() => undefined);
+        const runId = await postTask(v, targetId ?? undefined, system, targetSkills ?? undefined, targetMcp ?? undefined, {
+          canManageBots: targetIsChief,
+          // Chief: the model sees every bot so it can propose and @mention them.
+          // Member: the model sees the chief only — it can escalate/consult, nothing else.
+          roster: targetIsChief
+            ? bots
+                .filter((b) => b.id)
+                .map((b) => ({ id: b.id as string, name: b.name, role: b.role, skills: b.skillsEnabled, mcp: b.mcpEnabled }))
+            : (() => {
+                const chief = bots.find((b) => b.isChiefOfStaff && b.id && b.id !== targetId);
+                return chief
+                  ? [{ id: chief.id as string, name: chief.name, role: chief.role, skills: chief.skillsEnabled, mcp: chief.mcpEnabled }]
+                  : undefined;
+              })(),
+          botName: targetName,
+          ...(attachments.length > 0 ? { attachments } : {}),
+          ...(user?.userId ? { ownerId: user.userId } : {}),
+          ...(idToken ? { idToken } : {}),
+        });
+        // One handler set feeds both the progressive follower and the
+        // pending-poll below, so a parked run surfaces its card even when
+        // buffered. Each card is id-keyed: poll + follower doubles are
+        // dropped, not duplicated.
+        const onChunk = (delta: string) =>
+          patchTarget((b) => {
+            const msgs = b.msgs.filter((m) => m.t !== 'typing');
+            const last = msgs[msgs.length - 1];
+            if (last && last.t === 'b') msgs[msgs.length - 1] = { t: 'b', x: last.x + delta };
+            else msgs.push({ t: 'b', x: delta });
+            return { ...b, msgs };
+          });
+        const onAgent = (name: string) =>
+          patchTarget((b) => {
+            const msgs = b.msgs.filter((m) => m.t !== 'typing');
+            const row: Msg = { t: 'tool', x: `${name}` };
+            const last = msgs[msgs.length - 1];
+            if (last && last.t === 'tool') msgs[msgs.length - 1] = row;
+            else msgs.push(row);
+            return { ...b, msgs };
+          });
+        const onQuestion = (q: { qid: string; questions: { question: string; header?: string; options: { label: string; description?: string }[] }[] }) =>
+          patchTarget((b) => {
+            if (b.msgs.some((m) => m.t === 'q' && m.qid === q.qid)) return b;
+            return {
+              ...b,
+              msgs: [
+                ...b.msgs.filter((m) => m.t !== 'typing'),
+                { t: 'q', qid: q.qid, questions: q.questions },
+              ],
+            };
+          });
+        const onApproval = (a: { approvalId: string; permission?: string; target?: string }) =>
+          patchTarget((b) => {
+            if (b.msgs.some((m) => m.t === 'ask' && m.approvalId === a.approvalId)) return b;
+            return {
+              ...b,
+              msgs: [
+                ...b.msgs.filter((m) => m.t !== 'typing'),
+                {
+                  t: 'ask',
+                  title: 'Approval needed',
+                  x: `${a.permission ?? 'tool'}: ${a.target ?? ''}`,
+                  ok: 'Approve',
+                  after: 'Approved — continuing.',
+                  approvalId: a.approvalId,
+                  permission: a.permission,
+                },
+              ],
+            };
+          });
+        const onBotRequest = (r: { bid: string; botName: string; botRole?: string; botDescription?: string }) =>
+          patchTarget((b) => {
+            if (b.msgs.some((m) => m.t === 'botreq' && m.bid === r.bid)) return b;
+            return {
+              ...b,
+              msgs: [
+                ...b.msgs.filter((m) => m.t !== 'typing'),
+                { t: 'botreq', bid: r.bid, name: r.botName, role: r.botRole, description: r.botDescription },
+              ],
+            };
+          });
+        const pollTimer = setInterval(() => void pollPending(runId, { onApproval, onQuestion, onBotRequest }), 2500);
+        let finalOutput = '';
+        try {
+          finalOutput = await streamRunProgressive(runId, { onChunk, onAgent, onQuestion, onApproval, onBotRequest });
+        } finally {
+          clearInterval(pollTimer);
+        }
+        // Run finished — the returned output is authoritative: the server
+        // appends anything the streamed chunks missed (unrendered generated
+        // images, Sources block). Sync the last bot message to it, then drop
+        // any image-progress skeleton rows.
+        patchTarget((b) => {
+          const msgs = b.msgs.filter((m) => !(m.t === 'tool' && isImageProgress(m.x)));
+          if (finalOutput) {
+            const idx = msgs.map((m) => m.t).lastIndexOf('b');
+            if (idx >= 0 && msgs[idx].t === 'b' && msgs[idx].x !== finalOutput) {
+              msgs[idx] = { t: 'b', x: finalOutput };
+            } else if (idx < 0) {
+              msgs.push({ t: 'b', x: finalOutput });
+            }
+          }
+          return { ...b, busy: false, msgs };
+        });
+        // First chat defines the role (skipped for hello runs — the intro
+        // text must never be summarized into a role): AI compresses the
+        // user's job description into a short label and saves it (manual
+        // edits win — this only fires while the role is still empty, never
+        // for the chief).
+        if (targetId && !targetRole && !targetIsChief && !hello) {
+          void (async () => {
+            try {
+              const role = await summarizeRole(v, user?.userId);
+              if (!role) return;
+              await updateBotRow(targetId, { role });
+              patchTarget((b) => (b.role ? b : { ...b, role }));
+            } catch (err) {
+              console.error('[AppShell] role summarize failed:', err);
+            }
+          })();
+        }
+      } catch (err) {
+        // Surface the real failure instead of a generic line — the user can
+        // paste it straight back for debug. Hello runs stay silent: a failed
+        // intro leaves a clean thread.
+        const detail = err instanceof Error ? err.message : String(err);
+        console.error('[AppShell] agent send failed:', detail);
+        finish((b) => ({
+          ...b,
+          msgs: hello
+            ? [...b.msgs.filter((m) => m.t !== 'typing')]
+            : [...b.msgs.filter((m) => m.t !== 'typing'), { t: 'b', x: `That run failed: ${detail.slice(0, 300)}` }],
+        }));
+      }
+    })();
+  };
+
+  // Bot-initiated hello: one model run per bot, fired when its thread is
+  // known-empty and the computer is ready. Exactly-once via the module set.
+  const greetBot = (b: ViewBot) => {
+    if (!b.id || helloAttempted.has(b.id) || !computerReady) return;
+    helloAttempted.add(b.id);
+    sendText(
+      b.role
+        ? 'Introduce yourself briefly in character and ask for the first task.'
+        : 'Introduce yourself briefly and ask the user to define your role: what to do, what never to do, and what to remember.',
+      [],
+      { hello: true },
+    );
+  };
+
+  const approve = (msgIndex: number, decision: 'approve' | 'reject' | 'approve-all') => {
+    const ok = decision !== 'reject';
+    patchBot(cur, (b) => {
+      const target = b.msgs[msgIndex];
+      if (!target || target.t !== 'ask' || target.done !== undefined) return b;
+      const follow: Msg = {
+        t: 'b',
+        x: decision === 'approve-all' ? 'Shell allowed for the rest of this run.' : ok ? target.after : FOLLOW_UP_NO,
+      };
+      const msgs = b.msgs.map((m, j) =>
+        j === msgIndex && m.t === 'ask' ? { ...m, done: ok ? ('ok' as const) : ('no' as const) } : m,
+      );
+      return { ...b, msgs: [...msgs, follow] };
+    });
+    // Server-backed approval: tell the parked run to resume (or stop).
+    const target = bot?.msgs[msgIndex];
+    if (target && target.t === 'ask' && target.approvalId) {
+      const approvalId = target.approvalId;
+      void decideApproval(approvalId, decision).catch((err) =>
+        console.error('[AppShell] approval decision failed:', err),
+      );
     }
+  };
+
+  const answer = (msgIndex: number, answers: string[][]) => {
+    patchBot(cur, (b) => {
+      const target = b.msgs[msgIndex];
+      if (!target || target.t !== 'q' || target.done) return b;
+      return { ...b, msgs: b.msgs.map((m, j) => (j === msgIndex && m.t === 'q' ? { ...m, done: true as const } : m)) };
+    });
+    const target = bot?.msgs[msgIndex];
+    if (target && target.t === 'q') {
+      const qid = target.qid;
+      void answerQuestion(qid, answers).catch((err) => console.error('[AppShell] answer failed:', err));
+    }
+  };
+
+  // Core bot insert (no navigation). Returns the created id or an error message.
+  const insertBot = async (
+    name: string,
+    isChief: boolean,
+    role?: string,
+    description?: string,
+  ): Promise<{ botId: string | null; error: string | null }> => {
+    const ownerId = user?.userId;
+    if (!ownerId) return { botId: null, error: 'Not signed in. Please sign in again.' };
     const used = new Set(bots.map((b) => `${b.color}/${b.shape}`));
     const free = lookPool.filter((l) => !used.has(`${l.color}/${l.shape}`));
     const pool = free.length > 0 ? free : lookPool;
@@ -125,16 +451,105 @@ export default function AppShell() {
           setBots((botsPrev) => botsPrev.map((b) => (b.id === prev.id ? { ...b, isChiefOfStaff: false } : b)));
         }
       }
-      const row = await createBotRow({ ownerId, name, isChiefOfStaff: isChief, ...look });
+      const row = await createBotRow({
+        ownerId,
+        name,
+        ...(isChief ? { isChiefOfStaff: true } : {}),
+        ...(!isChief && role ? { role } : {}),
+        ...(!isChief && description ? { description } : {}),
+        ...look,
+      });
       setBots((prev) => [toViewBot(row), ...prev]);
-      setCur(0);
-      setSideOpen(false);
-      return null;
+      return { botId: row.id, error: null };
     } catch (err) {
       console.error('[AppShell] bot create failed:', err);
-      return err instanceof Error ? err.message : 'Create failed. Check your connection and try again.';
+      return { botId: null, error: err instanceof Error ? err.message : 'Create failed. Check your connection and try again.' };
     }
   };
+
+  // Chief-proposed bot: confirm card → create without leaving the thread.
+  // Name uniqueness is enforced here so the model retries with another name.
+  const confirmBotRequest = (msgIndex: number, ok: boolean) => {
+    const chief = bots[cur];
+    const target = chief?.msgs[msgIndex];
+    if (!chief?.id || !target || target.t !== 'botreq' || target.done !== undefined) return;
+    const chiefId = chief.id;
+    const bid = target.bid;
+    // Locate the chief by id at patch time — insertBot prepends, shifting indices.
+    const patchChief = (fn: (b: ViewBot) => ViewBot) =>
+      setBots((prev) => {
+        const i = prev.findIndex((b) => b.id === chiefId);
+        return i < 0 ? prev : prev.map((b, j) => (j === i ? fn(b) : b));
+      });
+    if (!ok) {
+      patchChief((b) => ({
+        ...b,
+        msgs: b.msgs.map((m, j) => (j === msgIndex && m.t === 'botreq' ? { ...m, done: 'cancelled' as const } : m)),
+      }));
+      void answerBotRequest(bid, { decision: 'cancel' }).catch((err) =>
+        console.error('[AppShell] bot request cancel failed:', err),
+      );
+      return;
+    }
+    const nameTaken = bots.some((b) => b.name.toLowerCase() === target.name.toLowerCase());
+    if (nameTaken) {
+      const error = `A bot named "${target.name}" already exists — pick another name.`;
+      patchChief((b) => ({
+        ...b,
+        msgs: b.msgs.map((m, j) => (j === msgIndex && m.t === 'botreq' ? { ...m, done: 'cancelled' as const } : m)),
+      }));
+      void answerBotRequest(bid, { decision: 'cancel', error }).catch((err) =>
+        console.error('[AppShell] bot request resolve failed:', err),
+      );
+      return;
+    }
+    void (async () => {
+      const { botId, error } = await insertBot(target.name, false, target.role, target.description);
+      // insertBot prepends to the roster — shift selection so the chief thread stays open.
+      setCur((c) => c + 1);
+      const done: 'created' | 'cancelled' = botId ? 'created' : 'cancelled';
+      patchChief((b) => ({
+        ...b,
+        msgs: b.msgs.map((m, j) => (j === msgIndex && m.t === 'botreq' ? { ...m, done } : m)),
+      }));
+      if (botId) void answerBotRequest(bid, { decision: 'confirm', botId }).catch((err) => console.error('[AppShell] bot request confirm failed:', err));
+      else void answerBotRequest(bid, { decision: 'cancel', error: error ?? 'Create failed.' }).catch((err) => console.error('[AppShell] bot request resolve failed:', err));
+    })();
+  };
+
+  const createBot = async (name: string, isChief: boolean): Promise<string | null> => {
+    const { error } = await insertBot(name, isChief);
+    if (!error) {
+      setCur(0);
+      setSideOpen(false);
+    }
+    return error;
+  };
+
+  const saveBotSkills = (enabled: string[] | null) => {
+    const target = bots[cur];
+    if (!target) return;
+    patchBot(cur, (b) => ({ ...b, skillsEnabled: enabled }));
+    // Sync best-effort — the picker already applied locally.
+    void updateBotRow(target.id, { skillsEnabled: enabled }).catch((err) =>
+      console.error('[AppShell] skills sync failed (applies next run):', err),
+    );
+  };
+
+  const saveBotMcp = (enabled: string[] | null) => {
+    const target = bots[cur];
+    if (!target) return;
+    patchBot(cur, (b) => ({ ...b, mcpEnabled: enabled }));
+    // Sync best-effort — the picker already applied locally.
+    void updateBotRow(target.id, { mcpEnabled: enabled }).catch((err) =>
+      console.error('[AppShell] mcp sync failed (applies next run):', err),
+    );
+  };
+
+  const q = query.toLowerCase();
+  const items = bots
+    .map((bot, index) => ({ bot, index }))
+    .filter(({ bot }) => !q || `${bot.name}${bot.role}`.toLowerCase().includes(q));
 
   const saveBotEdits = async (edits: BotEdits): Promise<string | null> => {
     const target = bots[cur];
@@ -202,6 +617,24 @@ export default function AppShell() {
       {main}
       {after}
       <NewBotModal open={botModalOpen} onClose={() => setBotModalOpen(false)} onCreate={createBot} taken={bots.map((b) => b.name)} />
+      {bot && (
+        <>
+          <SkillsPickerModal
+            open={skillsOpen}
+            onClose={() => setSkillsOpen(false)}
+            botName={bot.name}
+            enabled={bot.skillsEnabled}
+            onSave={saveBotSkills}
+          />
+          <McpPickerModal
+            open={mcpOpen}
+            onClose={() => setMcpOpen(false)}
+            botName={bot.name}
+            enabled={bot.mcpEnabled}
+            onSave={saveBotMcp}
+          />
+        </>
+      )}
     </div>
   );
 
@@ -274,45 +707,49 @@ export default function AppShell() {
         </div>
       )}
 
-      <div className="grid flex-1 place-items-center px-6">
-        <div className="max-w-sm text-center">
-          <p className="font-brico text-xl font-bold">Thread coming soon</p>
-          <p className="mt-2 text-sm leading-relaxed text-heroslate">
-            Chat with {bot.name} and the team thread will live here. Your real bots are listed
-            on the left — thread and composer wire up next.
-          </p>
-        </div>
-      </div>
-
-        <div className="px-4 pb-4">
-          <div className="flex items-center gap-2 rounded-2xl border border-navy/10 bg-white p-2 opacity-60">
-            <input
-              disabled
-              placeholder={`Message ${bot.name}… (coming soon)`}
-              className="w-full rounded-xl bg-transparent px-4 py-3 text-sm text-navy outline-none placeholder:text-slate-400"
-            />
-            <span className="shrink-0 rounded-xl bg-navy px-5 py-3 text-sm font-semibold text-white">
-              →
-            </span>
-          </div>
-        </div>
-      </main>,
-      <BotPanel
-        key={bot.id}
-        open={panelOpen}
-        onClose={() => setPanelOpen(false)}
-        botId={bot.id}
+      <Thread
+        bot={bot}
+        isChief={bot.isChiefOfStaff ?? false}
+        onApprove={approve}
+        onAnswer={answer}
+        onBotRequest={confirmBotRequest}
+        onSuggest={(text) => sendText(text, [])}
+      />
+      <Composer
+        botName={bot.name}
+        draft={draft}
+        onDraft={setDraft}
+        onSend={send}
+        onVoiceSend={(text) => sendText(text, [])}
+        onOpenSkills={() => setSkillsOpen(true)}
+        onOpenMcp={() => setMcpOpen(true)}
         ownerId={user?.userId}
-        name={bot.name}
-        role={bot.role}
-        description={bot.description}
-        model={bot.model}
-        isChiefOfStaff={bot.isChiefOfStaff ?? false}
-        color={bot.color}
-        shape={bot.shape}
-        synced={bot.id !== null}
-        onSave={saveBotEdits}
-        onDelete={deleteBot}
-      />,
-    );
-  }
+        mentionNames={(() => {
+          if (bot.isChiefOfStaff) return bots.filter((b) => b.id && b.id !== bot.id).map((b) => b.name);
+          const chief = bots.find((b) => b.isChiefOfStaff && b.id);
+          return chief ? [chief.name] : [];
+        })()}
+        disabled={!computerReady || bot.busy}
+        disabledHint={!computerReady ? bootHint : undefined}
+        onRetry={!computerReady ? () => retryComputerStart() : undefined}
+      />
+    </main>,
+    <BotPanel
+      key={bot.id}
+      open={panelOpen}
+      onClose={() => setPanelOpen(false)}
+      botId={bot.id}
+      ownerId={user?.userId}
+      name={bot.name}
+      role={bot.role}
+      description={bot.description}
+      model={bot.model}
+      isChiefOfStaff={bot.isChiefOfStaff ?? false}
+      color={bot.color}
+      shape={bot.shape}
+      synced={bot.id !== null}
+      onSave={saveBotEdits}
+      onDelete={deleteBot}
+    />,
+  );
+}
