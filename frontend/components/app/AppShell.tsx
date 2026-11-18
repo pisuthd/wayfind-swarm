@@ -32,6 +32,7 @@ import {
   type ContextStats,
 } from '@/lib/agent';
 import { fmtCtxTokens } from './Composer';
+import { MONTHLY_CAP_USD, fmtMoney, getMonthUsage, invalidateMonthUsage } from '@/lib/usage';
 import { friendlyModelName } from '@/lib/models';
 import { FOLLOW_UP_NO, isImageProgress, type Msg } from '@/lib/chat';
 
@@ -317,6 +318,25 @@ export default function AppShell() {
     void (async () => {
       const finish = (fn: (b: ViewBot) => ViewBot) => patchTarget((b) => ({ ...fn(b), busy: false }));
       try {
+        // Monthly spend cap (frontend-enforced): refuse new runs once this
+        // month's billed total reaches MONTHLY_CAP_USD. Hello intros stay
+        // silent — the user's first real send gets the notice instead.
+        if (!hello && user?.userId) {
+          const usage = await getMonthUsage(user.userId).catch(() => null);
+          if (usage && usage.spend >= MONTHLY_CAP_USD) {
+            finish((b) => ({
+              ...b,
+              msgs: [
+                ...b.msgs.filter((m) => m.t !== 'typing'),
+                {
+                  t: 'b',
+                  x: `Monthly usage cap reached (${fmtMoney(usage.spend)} of $${MONTHLY_CAP_USD.toFixed(2)} billed in ${usage.monthName}). Sends resume next month — open Usage in the profile menu for the breakdown.`,
+                },
+              ],
+            }));
+            return;
+          }
+        }
         // Scoped team: leads see every bot (cross-team reach, incl.
         // lead-to-lead); members see their own team only. The same scope
         // feeds the roster, the directory below, and mention autocomplete.
@@ -457,6 +477,9 @@ export default function AppShell() {
           return { ...b, busy: false, msgs };
         });
         refreshCtx(targetId, targetModel);
+        // Spend changed — drop the cached month total so the next send
+        // re-reads the ledger instead of trusting a stale under-count.
+        if (user?.userId) invalidateMonthUsage(user.userId);
         // First chat defines the role (skipped for hello runs — the intro
         // text must never be summarized into a role): AI compresses the
         // user's job description into a short label and saves it (manual

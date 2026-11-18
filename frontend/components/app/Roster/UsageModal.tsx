@@ -4,19 +4,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { generateClient } from 'aws-amplify/data';
-
-// Untyped data client: the generated Schema lives in wayfind-cloud (backend
-// package — not importable from a frontend). Runtime model access comes from
-// amplify_outputs.json, which this frontend shares with the backend.
-// `any` is deliberate — the modal only reads documented CreditLedger fields.
-/* eslint-disable @typescript-eslint/no-explicit-any */
-let client: any = null;
-
-function dataClient(): any {
-  if (!client) client = generateClient();
-  return client;
-}
+import { getMonthUsage, invalidateMonthUsage, shortModel, fmtDuration, fmtMoney, MONTHLY_CAP_USD } from '@/lib/usage';
 
 type RangeKey = 'day' | 'week' | 'month';
 
@@ -32,11 +20,6 @@ interface UsageModalProps {
   ownerId: string | null;
 }
 
-function fmtMoney(v: number): string {
-  const a = Math.abs(v);
-  return `$${a.toFixed(a < 1 ? 3 : 2)}`;
-}
-
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
@@ -47,35 +30,10 @@ function fmtDay(d: Date): string {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short' }).format(d);
 }
 
-interface ParsedUsage {
-  model?: string;
-  kind?: string;
-  inTokens?: number;
-  outTokens?: number;
-  tools?: number;
-}
-
-/** Reason lines look like: model usage run=&lt;id&gt; provider=… model=… kind=chat
- * 320 chars tokens=144261in/1055out tools=7 durationMs=1696 — parse them into
- * stats; anything else only counts toward billing. */
-function parseReason(reason?: string | null): ParsedUsage | null {
-  if (!reason || !reason.startsWith('model usage ')) return null;
-  const str = (re: RegExp): string | undefined => {
-    const m = reason.match(re);
-    return m ? m[1] : undefined;
-  };
-  const num = (re: RegExp): number | undefined => {
-    const m = reason.match(re);
-    return m ? Number(m[1]) : undefined;
-  };
-  const tokens = reason.match(/tokens=(\d+)in\/(\d+)out/);
-  return {
-    model: str(/model=(\S+)/),
-    kind: str(/kind=(\S+)/),
-    inTokens: tokens ? Number(tokens[1]) : undefined,
-    outTokens: tokens ? Number(tokens[2]) : undefined,
-    tools: num(/tools=(\d+)/),
-  };
+function fmtTime(iso?: string | null): string {
+  const t = new Date(iso ?? 0);
+  if (Number.isNaN(t.getTime())) return '—';
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(t);
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -94,9 +52,14 @@ function startOfDay(d: Date): Date {
 }
 
 export default function UsageModal({ open, onClose, ownerId }: UsageModalProps) {
+  const [month, setMonth] = useState<{ spend: number; runs: number; tokens: number; monthName: string } | null>(null);
   const [rows, setRows] = useState<Array<{
     id: string; delta?: number | null; reason?: string | null; createdAt?: string | null;
+    p: { model?: string; provider?: string; kind?: string; inTokens?: number; outTokens?: number; tools?: number; durationMs?: number } | null;
   }> | null>(null);
+  const [byModel, setByModel] = useState<Array<{
+    model: string; provider: string; runs: number; inTokens: number; outTokens: number; tools: number; spend: number;
+  }>>([]);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [range, setRange] = useState<RangeKey>('week');
@@ -105,14 +68,15 @@ export default function UsageModal({ open, onClose, ownerId }: UsageModalProps) 
     if (!open || !ownerId) return;
     let alive = true;
     setRows(null);
+    setMonth(null);
     setError('');
     void (async () => {
       try {
-        const { data, errors } = await dataClient().models.CreditLedger.ledgerByOwnerId({ ownerId }, { limit: 100 });
-        if (errors?.length) throw new Error(errors.map((e: any) => e.message).join('; '));
+        const u = await getMonthUsage(ownerId);
         if (!alive) return;
-        const list = [...((data ?? []) as any[])].sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
-        setRows(list);
+        setMonth({ spend: u.spend, runs: u.runs, tokens: u.tokens, monthName: u.monthName });
+        setRows(u.rows);
+        setByModel(u.byModel);
       } catch (err) {
         if (!alive) return;
         setError(err instanceof Error ? err.message : 'Could not load usage');
@@ -142,16 +106,7 @@ export default function UsageModal({ open, onClose, ownerId }: UsageModalProps) 
     return t >= todayStart - (days - 1) * 86400_000;
   };
 
-  const allParsed = (rows ?? []).map((r) => ({ row: r, p: parseReason(r.reason) }));
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  const monthRows = allParsed.filter((x) => {
-    const t = new Date(x.row.createdAt ?? 0).getTime();
-    return !Number.isNaN(t) && t >= monthStart;
-  });
-  const monthBilled = Math.abs(monthRows.reduce((sum, x) => sum + (x.row.delta ?? 0), 0));
-  const monthTokens = monthRows.reduce((s, x) => s + (x.p?.inTokens ?? 0) + (x.p?.outTokens ?? 0), 0);
-  const monthName = new Intl.DateTimeFormat('en-GB', { month: 'long' }).format(now);
-  const scoped = allParsed.filter((x) => inWindow(x.row.createdAt));
+  const scoped = (rows ?? []).filter((x) => inWindow(x.createdAt));
   const modelRows = scoped.filter((x) => x.p);
   const inT = modelRows.reduce((s, x) => s + (x.p?.inTokens ?? 0), 0);
   const outT = modelRows.reduce((s, x) => s + (x.p?.outTokens ?? 0), 0);
@@ -170,8 +125,8 @@ export default function UsageModal({ open, onClose, ownerId }: UsageModalProps) 
     for (let h = 0; h < 24; h++) {
       buckets.push({ label: `${h}:00`, short: `${h}:00`, tokens: 0 });
     }
-    for (const { row: r, p } of modelRows) {
-      const t = new Date(r.createdAt ?? 0).getTime();
+    for (const { createdAt: c, p } of modelRows) {
+      const t = new Date(c ?? 0).getTime();
       if (Number.isNaN(t) || t < todayStart) continue;
       const h = Math.min(23, Math.floor((t - todayStart) / 3600_000));
       buckets[h].tokens += (p?.inTokens ?? 0) + (p?.outTokens ?? 0);
@@ -183,8 +138,8 @@ export default function UsageModal({ open, onClose, ownerId }: UsageModalProps) 
       const label = fmtDay(new Date(todayStart - i * 86400_000));
       buckets.push({ label, short: label.split(' ')[0], tokens: 0 });
     }
-    for (const { row: r, p } of modelRows) {
-      const t = new Date(r.createdAt ?? 0).getTime();
+    for (const { createdAt: c, p } of modelRows) {
+      const t = new Date(c ?? 0).getTime();
       if (Number.isNaN(t)) continue;
       const idx = Math.round((startOfDay(new Date(t)).getTime() - (todayStart - (days - 1) * 86400_000)) / 86400_000);
       if (idx < 0 || idx >= days) continue;
@@ -193,6 +148,11 @@ export default function UsageModal({ open, onClose, ownerId }: UsageModalProps) 
   }
 
   const rangeNoun = range === 'day' ? 'today' : range === 'week' ? 'this week' : 'this month';
+  const spend = month?.spend ?? 0;
+  const pct = Math.min(100, (spend / MONTHLY_CAP_USD) * 100);
+  const capped = spend >= MONTHLY_CAP_USD;
+  const nextMonth = new Intl.DateTimeFormat('en-GB', { month: 'long' }).format(new Date(now.getFullYear(), now.getMonth() + 1, 1));
+  const maxModelMetric = Math.max(0, ...byModel.map((b) => (spend > 0 ? b.spend : b.inTokens + b.outTokens)));
 
   return createPortal(
     <AnimatePresence>
@@ -209,7 +169,7 @@ export default function UsageModal({ open, onClose, ownerId }: UsageModalProps) 
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="flex max-h-[80vh] w-full max-w-sm flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+            className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -221,10 +181,35 @@ export default function UsageModal({ open, onClose, ownerId }: UsageModalProps) 
                 <p className="mt-3 text-3xl font-bold text-navy">…</p>
               ) : (
                 <>
-                  <p className="mt-1 text-3xl font-bold text-navy">{fmtMoney(monthBilled)}</p>
-                  <p className="mt-0.5 text-xs font-semibold text-heroslate">
-                    Billed in {monthName} · {monthRows.length} runs · {fmtTokens(monthTokens)} tokens
+                  <p className="mt-1 text-3xl font-bold text-navy">
+                    {fmtMoney(spend)}{' '}
+                    <span className="text-base font-semibold text-heroslate">of ${MONTHLY_CAP_USD.toFixed(2)}</span>
                   </p>
+                  <p className="mt-0.5 text-xs font-semibold text-heroslate">
+                    Billed in {month?.monthName} · {month?.runs ?? 0} runs · {fmtTokens(month?.tokens ?? 0)} tokens
+                  </p>
+                  <div
+                    className="mt-2 h-2 overflow-hidden rounded-full bg-ice"
+                    role="progressbar"
+                    aria-valuenow={Math.round(pct)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label="Monthly spend against cap"
+                  >
+                    <div
+                      className={`h-full rounded-full transition-all ${capped ? 'bg-red-500' : pct >= 80 ? 'bg-bamber' : 'bg-blagoon'}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  {capped ? (
+                    <p className="mt-1.5 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600">
+                      Monthly cap reached — new sends are paused until {nextMonth}.
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-[11px] font-semibold text-heroslate">
+                      {fmtMoney(MONTHLY_CAP_USD - spend)} left this month · cap resets 1 {nextMonth}
+                    </p>
+                  )}
                   <div className="mt-3 grid grid-cols-3 gap-1 rounded-full bg-ice p-1" role="tablist" aria-label="Usage range">
                     {RANGES.map((r) => (
                       <button
@@ -254,7 +239,10 @@ export default function UsageModal({ open, onClose, ownerId }: UsageModalProps) 
                 <div className="py-4 text-center">
                   <p className="text-xs font-semibold text-red-600">{error}</p>
                   <button
-                    onClick={() => setAttempt((a) => a + 1)}
+                    onClick={() => {
+                      if (ownerId) invalidateMonthUsage(ownerId);
+                      setAttempt((a) => a + 1);
+                    }}
                     className="mt-2 rounded-full bg-ice px-4 py-1.5 text-xs font-bold text-navy"
                   >
                     Retry
@@ -296,6 +284,57 @@ export default function UsageModal({ open, onClose, ownerId }: UsageModalProps) 
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
+                  {byModel.length > 0 && (
+                    <>
+                      <p className="mt-4 text-[11px] font-semibold text-heroslate">Spend by model · this month</p>
+                      <ul className="mt-1.5 space-y-2">
+                        {byModel.map((b) => {
+                          const metric = spend > 0 ? b.spend : b.inTokens + b.outTokens;
+                          return (
+                            <li key={`${b.provider} ${b.model}`}>
+                              <span className="flex items-baseline justify-between gap-2 text-xs">
+                                <span className="min-w-0 truncate font-bold text-navy" title={`${b.provider} ${b.model}`}>
+                                  {b.model}
+                                  <span className="ml-1.5 font-semibold text-heroslate">{b.provider}</span>
+                                </span>
+                                <span className="shrink-0 font-semibold text-heroslate">
+                                  {b.runs} run{b.runs === 1 ? '' : 's'} · {fmtTokens(b.inTokens + b.outTokens)} · {fmtMoney(b.spend)}
+                                </span>
+                              </span>
+                              <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-ice">
+                                <span
+                                  className="block h-full rounded-full bg-cta"
+                                  style={{ width: `${maxModelMetric > 0 ? (metric / maxModelMetric) * 100 : 0}%` }}
+                                />
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      {spend === 0 && (
+                        <p className="mt-1.5 text-[11px] text-heroslate">
+                          Tokens only — current providers are unpriced, so nothing is billed yet.
+                        </p>
+                      )}
+                    </>
+                  )}
+                  <p className="mt-4 text-[11px] font-semibold text-heroslate">Recent runs · this month</p>
+                  <ul className="mt-1.5 divide-y divide-slate-100">
+                    {(rows ?? []).slice(0, 8).map((r) => (
+                      <li key={r.id} className="flex items-baseline justify-between gap-2 py-1.5 text-xs">
+                        <span className="min-w-0">
+                          <span className="block truncate font-bold text-navy">{shortModel(r.p?.model)}</span>
+                          <span className="block text-[11px] text-heroslate">
+                            {fmtTime(r.createdAt)} · {r.p?.kind ?? 'run'} · {fmtDuration(r.p?.durationMs)}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-right font-semibold text-heroslate">
+                          {fmtTokens((r.p?.inTokens ?? 0) + (r.p?.outTokens ?? 0))} · {r.p?.tools ?? 0} tools
+                          <span className="block font-bold text-navy">{fmtMoney(Math.abs(r.delta ?? 0))}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </>
               )}
             </div>
