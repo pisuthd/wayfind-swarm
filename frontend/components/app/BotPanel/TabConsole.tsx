@@ -91,7 +91,7 @@ export default function TabConsole({ onOpen }: { onOpen: () => void }) {
           </div>
           <div>
             <p className="text-sm font-bold text-navy">Computer</p>
-            <p className="text-xs text-heroslate">bash · Alpine Linux</p>
+            <p className="text-xs text-heroslate">bash · Debian 12</p>
           </div>
         </div>
         <span

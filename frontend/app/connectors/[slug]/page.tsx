@@ -21,16 +21,17 @@ export function generateStaticParams(): { slug: string }[] {
   return CONNECTORS.map((c) => ({ slug: connectorSlug(c.name) }));
 }
 
-export function generateMetadata({ params }: { params: { slug: string } }): Metadata {
-  const c = CONNECTORS.find((k) => connectorSlug(k.name) === params.slug);
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const c = CONNECTORS.find((k) => connectorSlug(k.name) === slug);
   return {
     title: c ? `${c.name} connector — Wayfind SWARM` : 'Connector not found — Wayfind SWARM',
     description: c?.description ?? c?.blurb ?? 'Browse the Wayfind SWARM connector catalog.',
   };
 }
 
-export default function ConnectorDetailPage({ params }: { params: { slug: string } }) {
-  const { slug } = params;
+export default async function ConnectorDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
   const c = CONNECTORS.find((k) => connectorSlug(k.name) === slug);
 
   if (!c) {

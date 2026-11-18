@@ -83,7 +83,7 @@ export default function TerminalModal({ open, onClose, botName }: TerminalModalP
             </div>
             <div className="flex items-center justify-between border-t border-white/10 px-5 py-2.5">
               <p className="font-mono text-[11px] text-white/50">
-                {['bash', 'Alpine Linux', meta.cols && meta.rows ? `${meta.cols}×${meta.rows}` : null]
+                {['bash', 'Debian 12', meta.cols && meta.rows ? `${meta.cols}×${meta.rows}` : null]
                   .filter(Boolean)
                   .join(' · ')}
               </p>
