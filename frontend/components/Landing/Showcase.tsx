@@ -17,11 +17,11 @@ export default function Showcase() {
           <span className="h-2.5 w-2.5 rounded-full bg-[#FEBC2E]" />
           <span className="h-2.5 w-2.5 rounded-full bg-[#28C840]" />
           <span className="ml-3 hidden rounded-md bg-white px-3 py-1 text-xs text-ink sm:inline">
-            app.wayfind.swarm/workspace
+            www.wayfind.click/app
           </span>
         </div>
         <img
-          src="/showcase.png"
+          src="/showcase-1.png"
           alt="Wayfind SWARM shared workspace preview"
           className="h-auto w-full"
         />
