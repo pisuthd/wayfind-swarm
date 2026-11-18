@@ -30,37 +30,7 @@ interface ThreadProps {
   onSuggest?: (text: string) => void;
 }
 
-/** Example prompts under the greeting — shown only while the bot's greeting
- * is the single AI message, so they vanish once a real conversation starts. */
-const CHIEF_SUGGESTION = {
-  label: 'Meet Jodie',
-  desc: 'Create an intern bot',
-  prompt: 'Create a new bot named Jodie who is an intern.',
-};
 
-const MEMBER_SUGGESTION = {
-  label: 'Ask the team',
-  desc: 'Consult a teammate with @Name',
-  prompt: 'Ask my team for help with this.',
-};
-
-const SUGGESTIONS = [
-  {
-    label: 'Draw a cat',
-    desc: 'Generate a cartoon cat image',
-    prompt: 'Generate a cartoon image of a cat',
-  },
-  {
-    label: 'Write a poem',
-    desc: 'A short river poem, saved to a file',
-    prompt: 'Write a short 8-line poem about a river and save it as my-poem.txt',
-  },
-  {
-    label: 'Check Bitcoin price',
-    desc: 'Look it up on Coinbase',
-    prompt: 'Check the Bitcoin price from https://api.coinbase.com/v2/prices/BTC-USD/spot',
-  },
-];
 
 /** Elapsed run clock for the typing row — ticks locally so the thread only
  * re-renders this bubble, not the whole list, every second. */
@@ -370,20 +340,6 @@ export default function Thread({ bot, isChief, onApprove, onAnswer, onBotRequest
           }
           return <ApprovalCard key={i} msg={m} onOk={() => onApprove(i, 'approve')} onNo={() => onApprove(i, 'reject')} onAll={() => onApprove(i, 'approve-all')} />;
         })}
-        {onSuggest && showSuggestions && (
-          <div className="msg-in mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {[isChief ? CHIEF_SUGGESTION : MEMBER_SUGGESTION, ...SUGGESTIONS].map((s) => (
-              <button
-                key={s.label}
-                onClick={() => onSuggest(s.prompt)}
-                className="rounded-2xl border border-navy/15 bg-white px-4 py-3 text-left shadow-sm transition-colors hover:border-cta hover:bg-cta/5"
-              >
-                <span className="block text-sm font-bold text-navy">{s.label}</span>
-                <span className="mt-0.5 block text-xs text-heroslate">{s.desc}</span>
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );
