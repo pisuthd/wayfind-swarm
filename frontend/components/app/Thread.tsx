@@ -26,6 +26,9 @@ interface ThreadProps {
   isChief?: boolean;
   onApprove: (msgIndex: number, decision: 'approve' | 'reject' | 'approve-all') => void;
   onAnswer?: (msgIndex: number, answers: string[][]) => void;
+  /** Per-question pick (undefined clears). No server call — the card submits
+   * one batch via onAnswer once every question is answered or skipped. */
+  onSelectQuestion?: (msgIndex: number, qi: number, sel: string[] | undefined) => void;
   onBotRequest?: (msgIndex: number, ok: boolean) => void;
   onSuggest?: (text: string) => void;
 }
@@ -43,6 +46,33 @@ function RunClock({ since }: { since: number }) {
   const s = Math.max(0, Math.floor((Date.now() - since) / 1000));
   const label = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
   return <span className="tabular-nums">working · {label}</span>;
+}
+
+/** Run-level status pill: persistent elapsed clock for the whole run, plus a
+ * staleness warning when no run event has arrived for a while — so a quiet
+ * bot reads as "still working" instead of "frozen". Ticks locally. */
+export function RunStatus({ startedAt, lastEventAt }: { startedAt: number; lastEventAt: number }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const s = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+  const label = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+  const gap = Math.max(0, Math.floor((Date.now() - lastEventAt) / 1000));
+  const stale = gap >= 15;
+  return (
+    <div className="mx-4 mb-1 flex items-center justify-center">
+      <span
+        className={`rounded-full px-4 py-1.5 text-center text-xs font-bold tabular-nums ${
+          stale ? 'bg-bamber/25 text-navy' : 'bg-white text-heroslate shadow-sm'
+        }`}
+      >
+        working · {label}
+        {stale && <span> · last update {gap}s ago</span>}
+      </span>
+    </div>
+  );
 }
 
 /** Free-text answer row inside a question card. Sends the typed text as the answer. */
@@ -129,7 +159,90 @@ function ApprovalCard({ msg, onOk, onNo, onAll }: { msg: Extract<Msg, { t: 'ask'
   );
 }
 
-export default function Thread({ bot, isChief, onApprove, onAnswer, onBotRequest, onSuggest }: ThreadProps) {
+/** Multi-question card: each question is answered independently and the card
+ * submits one positional batch only when every question is answered or
+ * skipped — answering Q1 no longer closes Q2. */
+function QuestionCard({
+  msg,
+  msgIndex,
+  onSelect,
+  onAnswer,
+}: {
+  msg: Extract<Msg, { t: 'q' }>;
+  msgIndex: number;
+  onSelect?: (msgIndex: number, qi: number, sel: string[] | undefined) => void;
+  onAnswer?: (msgIndex: number, answers: string[][]) => void;
+}) {
+  const total = msg.questions.length;
+  const sels = msg.selections ?? [];
+  const allAnswered = total > 0 && sels.length === total && sels.every((s) => s !== undefined);
+  return (
+    <div className="msg-in rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      {msg.questions.map((q, qi) => {
+        const sel = sels[qi];
+        const answeredQi = sel !== undefined;
+        return (
+          <div key={qi} className={qi > 0 ? 'mt-3 border-t border-slate-100 pt-3' : ''}>
+            {q.header && <p className="text-xs font-bold uppercase tracking-wide text-cta">{q.header}</p>}
+            <p className="mt-0.5 font-bold text-navy">{q.question}</p>
+            {msg.done === true || answeredQi ? (
+              <p className="mt-2 flex items-center gap-2 text-sm">
+                <span className="font-semibold text-navy">{sel && sel.length > 0 ? sel.join(', ') : 'Skipped'}</span>
+                {msg.done !== true && (
+                  <button
+                    onClick={() => onSelect?.(msgIndex, qi, undefined)}
+                    className="font-semibold text-heroslate underline hover:text-cta"
+                  >
+                    Change
+                  </button>
+                )}
+              </p>
+            ) : (
+              <div className="mt-2 flex flex-col gap-1.5">
+                {q.options.map((o) => (
+                  <button
+                    key={o.label}
+                    onClick={() => onSelect?.(msgIndex, qi, [o.label])}
+                    className="rounded-xl border border-navy/20 px-3.5 py-2 text-left hover:border-cta hover:bg-cta/5"
+                  >
+                    <span className="block text-sm font-bold text-navy">{o.label}</span>
+                    {o.description && <span className="mt-0.5 block text-xs text-heroslate">{o.description}</span>}
+                  </button>
+                ))}
+                <CustomAnswer
+                  key={`custom-${qi}`}
+                  secret={/passkey|password|secret|api[-_ ]?key|token|mnemonic|private/i.test(
+                    `${q.header ?? ''} ${q.question}`,
+                  )}
+                  onSend={(text) => onSelect?.(msgIndex, qi, [text])}
+                />
+                <button
+                  onClick={() => onSelect?.(msgIndex, qi, [])}
+                  className="rounded-xl px-3.5 py-1.5 text-left text-sm font-semibold text-heroslate hover:bg-slate-50"
+                >
+                  Skip
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {msg.done === true ? (
+        <p className="mt-2 text-sm font-bold text-blagoon">✓ Answered</p>
+      ) : (
+        <button
+          disabled={!allAnswered}
+          onClick={() => onAnswer?.(msgIndex, msg.questions.map((_, j) => sels[j] ?? []))}
+          className="mt-3 w-full rounded-xl bg-cta px-4 py-2 text-sm font-bold text-white hover:bg-ctahover disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {allAnswered ? 'Send answers' : `Answer all questions (${sels.filter((s) => s !== undefined).length}/${total})`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export default function Thread({ bot, isChief, onApprove, onAnswer, onSelectQuestion, onBotRequest, onSuggest }: ThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // Suggestions live only on the untouched greeting: one AI message and
   // nothing else — a tap appends the user message and hides them instantly.
@@ -203,54 +316,7 @@ export default function Thread({ bot, isChief, onApprove, onAnswer, onBotRequest
             );
           }
           if (m.t === 'q') {
-            const answered = m.done === true;
-            return (
-              <div key={i} className="msg-in rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                {m.questions.map((q, qi) => (
-                  <div key={qi} className={qi > 0 ? 'mt-3 border-t border-slate-100 pt-3' : ''}>
-                    {q.header && <p className="text-xs font-bold uppercase tracking-wide text-cta">{q.header}</p>}
-                    <p className="mt-0.5 font-bold text-navy">{q.question}</p>
-                    {!answered && (
-                      <div className="mt-2 flex flex-col gap-1.5">
-                        {q.options.map((o) => (
-                          <button
-                            key={o.label}
-                            onClick={() => {
-                              // Single-select v1: answer only this question.
-                              const answers = m.questions.map((qq, j) => (j === qi ? [o.label] : []));
-                              onAnswer?.(i, answers);
-                            }}
-                            className="rounded-xl border border-navy/20 px-3.5 py-2 text-left hover:border-cta hover:bg-cta/5"
-                          >
-                            <span className="block text-sm font-bold text-navy">{o.label}</span>
-                            {o.description && (
-                              <span className="mt-0.5 block text-xs text-heroslate">{o.description}</span>
-                            )}
-                          </button>
-                        ))}
-                        <CustomAnswer
-                          key={`custom-${qi}`}
-                          secret={/passkey|password|secret|api[-_ ]?key|token|mnemonic|private/i.test(
-                            `${q.header ?? ''} ${q.question}`,
-                          )}
-                          onSend={(text) => {
-                            const answers = m.questions.map((qq, j) => (j === qi ? [text] : []));
-                            onAnswer?.(i, answers);
-                          }}
-                        />
-                        <button
-                          onClick={() => onAnswer?.(i, m.questions.map(() => []))}
-                          className="rounded-xl px-3.5 py-1.5 text-left text-sm font-semibold text-heroslate hover:bg-slate-50"
-                        >
-                          Skip
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {answered && <p className="mt-2 text-sm font-bold text-blagoon">✓ Answered</p>}
-              </div>
-            );
+            return <QuestionCard key={i} msg={m} msgIndex={i} onSelect={onSelectQuestion} onAnswer={onAnswer} />;
           }
           if (m.t === 'typing') {
             // Last activity = most recent tool row (skips image-progress

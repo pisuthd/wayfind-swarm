@@ -125,7 +125,7 @@ type RunEvent = { type: string; chunk?: string; agent?: string; output?: string;
 >;
 
 /** Shared event dispatch for the run follower. Returns updated output; throws on error events. */
-function applyRunEvent(e: RunEvent, handlers: StreamHandlers, output: string): string {
+export function applyRunEvent(e: RunEvent, handlers: StreamHandlers, output: string): string {
   if (e.type === 'chunk' && typeof e.chunk === 'string') {
     output += e.chunk;
     handlers.onChunk?.(e.chunk);
@@ -182,13 +182,14 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 /** Progressive run follower for the buffered cloud relay: polls the events
  * endpoint ~1/s and dispatches the same handlers a stream would, so chunks,
  * approvals, questions and bot requests all surface mid-run. Tolerates up to
- * 3 consecutive fetch failures before giving up. */
+ * 3 consecutive fetch failures before giving up. startCursor resumes after a
+ * dropped websocket without replaying (or skipping) events. */
 export async function streamRunProgressive(
   runId: string,
   handlers: StreamHandlers,
-  opts?: { intervalMs?: number; timeoutMs?: number },
+  opts?: { intervalMs?: number; timeoutMs?: number; startCursor?: number; onCursor?: (cursor: number) => void },
 ): Promise<string> {
-  let cursor = 0;
+  let cursor = opts?.startCursor ?? 0;
   let output = '';
   let failures = 0;
   const interval = opts?.intervalMs ?? 1000;
@@ -207,12 +208,126 @@ export async function streamRunProgressive(
     }
     for (const e of page.events ?? []) {
       output = applyRunEvent(e, handlers, output);
+      cursor += 1;
+      opts?.onCursor?.(cursor);
       if (e.type === 'done') return output;
     }
-    cursor = typeof page.nextCursor === 'number' ? page.nextCursor : cursor + (page.events?.length ?? 0);
+    cursor = typeof page.nextCursor === 'number' ? page.nextCursor : cursor;
+    opts?.onCursor?.(cursor);
     if (page.done) return output;
     await sleep(interval);
   }
+}
+
+export interface WsStreamOpts {
+  /** Bare microvm host, e.g. xxx.lambda-microvm.<region>.on.aws */
+  endpoint: string;
+  /** Short-lived port-8080 token (same flow as the terminal). */
+  token: string;
+  timeoutMs?: number;
+  /** Give up if no frame arrives this soon after connect (falls back to polling). */
+  connectTimeoutMs?: number;
+  /** Give up if the socket goes this long with zero frames mid-run. */
+  silenceTimeoutMs?: number;
+  startCursor?: number;
+  onCursor?: (cursor: number) => void;
+}
+
+/** Live run follower over websocket (same subprotocol auth as the terminal).
+ * Resolves with the final output + buffer cursor on done; rejects on error
+ * frames, close-before-done, connect timeout, or mid-run silence — the
+ * caller falls back to streamRunProgressive from the returned cursor. */
+export function streamRunWs(
+  runId: string,
+  handlers: StreamHandlers,
+  opts: WsStreamOpts,
+): Promise<{ output: string; cursor: number }> {
+  return new Promise((resolve, reject) => {
+    let output = '';
+    let cursor = opts.startCursor ?? 0;
+    let settled = false;
+    let firstFrame = false;
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadlineTimer);
+      clearTimeout(connectTimer);
+      clearTimeout(silenceTimer);
+      fn();
+    };
+    const fail = (err: Error): void => {
+      finish(() => {
+        try {
+          ws.close();
+        } catch {
+          // already closed
+        }
+        reject(err);
+      });
+    };
+    const armSilence = (): void => {
+      clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(() => fail(new Error('run stream went silent')), opts.silenceTimeoutMs ?? 45_000);
+    };
+    const deadlineTimer = setTimeout(() => fail(new Error('agent run timed out')), opts.timeoutMs ?? 600_000);
+    const connectTimer = setTimeout(() => {
+      if (!firstFrame) fail(new Error('ws-connect-timeout'));
+    }, opts.connectTimeoutMs ?? 8000);
+    let silenceTimer: ReturnType<typeof setTimeout> = setTimeout(() => {}, 0);
+    clearTimeout(silenceTimer);
+    armSilence();
+    const ws = new WebSocket(`wss://${opts.endpoint}/runs/${runId}/events?cursor=${cursor}`, [
+      'lambda-microvms',
+      `lambda-microvms.authentication.${opts.token}`,
+      'lambda-microvms.port.8080',
+    ]);
+    ws.onmessage = (ev) => {
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(String((ev as MessageEvent).data)) as Record<string, unknown>;
+      } catch {
+        return;
+      }
+      if (msg?.type === 'ping' || msg?.type === 'hello') {
+        firstFrame = true;
+        clearTimeout(connectTimer);
+        armSilence();
+        return;
+      }
+      firstFrame = true;
+      clearTimeout(connectTimer);
+      try {
+        output = applyRunEvent(msg as RunEvent, handlers, output);
+      } catch (err) {
+        fail(err instanceof Error ? err : new Error('agent run failed'));
+        return;
+      }
+      if (typeof msg.cursor === 'number') {
+        cursor = msg.cursor + 1;
+        opts.onCursor?.(cursor);
+      }
+      armSilence();
+      if (msg.type === 'done') {
+        const out = output;
+        const cur = cursor;
+        finish(() => {
+          try {
+            ws.close();
+          } catch {
+            // already closed
+          }
+          resolve({ output: out, cursor: cur });
+        });
+      }
+    };
+    ws.onerror = () => {
+      if (!firstFrame) fail(new Error('ws-connect-timeout'));
+      else fail(new Error('run stream closed before done'));
+    };
+    ws.onclose = () => {
+      fail(new Error(firstFrame ? 'run stream closed before done' : 'ws-connect-timeout'));
+    };
+  });
 }
 
 /** Answer a parked question. The run continues with your answers. */

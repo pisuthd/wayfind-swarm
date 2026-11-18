@@ -11,7 +11,7 @@ import NewBotModal from './Roster/NewBotModal';
 import TeamPickerModal from './Roster/TeamPickerModal';
 import { importTeam, type TeamSpec } from '@/lib/teams';
 import BotPanel, { type BotEdits } from './BotPanel';
-import Thread from './Thread';
+import Thread, { RunStatus } from './Thread';
 import Composer from './Composer';
 import SkillsPickerModal from './SkillsPickerModal';
 import McpPickerModal from './McpPickerModal';
@@ -28,9 +28,11 @@ import {
   pollPending,
   postTask,
   streamRunProgressive,
+  streamRunWs,
   summarizeRole,
   type ContextStats,
 } from '@/lib/agent';
+import { computerToken } from '@/lib/wayfind-api';
 import { fmtCtxTokens } from './Composer';
 import { MONTHLY_CAP_USD, fmtMoney, getMonthUsage, invalidateMonthUsage } from '@/lib/usage';
 import { friendlyModelName } from '@/lib/models';
@@ -64,6 +66,11 @@ type ViewBot = RosterBot & {
   skillsEnabled: string[] | null;
   mcpEnabled: string[] | null;
   busy: boolean;
+  /** Run clock: set when a run starts, cleared when it settles. Survives
+   * the typing bubble being removed so long runs always show elapsed. */
+  runStartedAt?: number;
+  /** Last run-event timestamp — drives the "last update Xs ago" warning. */
+  lastEventAt?: number;
   msgs: Msg[];
 };
 
@@ -243,10 +250,13 @@ export default function AppShell() {
     const targetModel = bot.model ?? undefined;
     setDraft('');
     setCompacting(true);
-    patchBot(targetIndex, (b) => ({
-      ...b,
-      busy: true,
-      msgs: includeUserBubble
+  const compactNow2 = Date.now();
+  patchBot(targetIndex, (b) => ({
+    ...b,
+    busy: true,
+    runStartedAt: compactNow2,
+    lastEventAt: compactNow2,
+    msgs: includeUserBubble
         ? [...b.msgs, { t: 'u', x: '/compact' }, { t: 'typing', since: Date.now() }]
         : [...b.msgs, { t: 'typing', since: Date.now() }],
     }));
@@ -257,6 +267,8 @@ export default function AppShell() {
         patchTarget((b) => ({
           ...b,
           busy: false,
+          runStartedAt: undefined,
+          lastEventAt: undefined,
           msgs: [
             ...b.msgs.filter((m) => m.t !== 'typing'),
             {
@@ -274,6 +286,8 @@ export default function AppShell() {
         patchTarget((b) => ({
           ...b,
           busy: false,
+          runStartedAt: undefined,
+          lastEventAt: undefined,
           msgs: [...b.msgs.filter((m) => m.t !== 'typing'), { t: 'b', x: `Compact failed: ${detail.slice(0, 200)}` }],
         }));
       } finally {
@@ -303,9 +317,12 @@ export default function AppShell() {
     // Hello runs are bot-initiated: no user bubble, just the typing row.
     // Failures stay silent so the thread simply starts empty.
     const hello = opts?.hello === true;
+    const runNow = Date.now();
     patchBot(targetIndex, (b) => ({
       ...b,
       busy: true,
+      runStartedAt: runNow,
+      lastEventAt: runNow,
       msgs: hello
         ? [...b.msgs, { t: 'typing', since: Date.now() }]
         : [...b.msgs, { t: 'u', x: v || '(attached files)', ...(attachments.length > 0 ? { files: attachments } : {}) }, { t: 'typing', since: Date.now() }],
@@ -316,7 +333,8 @@ export default function AppShell() {
     const patchTarget = (fn: (b: ViewBot) => ViewBot) =>
       targetId ? patchBotById(targetId, fn) : patchBot(targetIndex, fn);
     void (async () => {
-      const finish = (fn: (b: ViewBot) => ViewBot) => patchTarget((b) => ({ ...fn(b), busy: false }));
+      const finish = (fn: (b: ViewBot) => ViewBot) =>
+        patchTarget((b) => ({ ...fn(b), busy: false, runStartedAt: undefined, lastEventAt: undefined }));
       try {
         // Monthly spend cap (frontend-enforced): refuse new runs once this
         // month's billed total reaches MONTHLY_CAP_USD. Hello intros stay
@@ -384,7 +402,7 @@ export default function AppShell() {
             const last = msgs[msgs.length - 1];
             if (last && last.t === 'b') msgs[msgs.length - 1] = { t: 'b', x: last.x + delta };
             else msgs.push({ t: 'b', x: delta });
-            return { ...b, msgs };
+            return { ...b, lastEventAt: Date.now(), msgs };
           });
         const onAgent = (name: string) =>
           patchTarget((b) => {
@@ -393,13 +411,14 @@ export default function AppShell() {
             const last = msgs[msgs.length - 1];
             if (last && last.t === 'tool') msgs[msgs.length - 1] = row;
             else msgs.push(row);
-            return { ...b, msgs };
+            return { ...b, lastEventAt: Date.now(), msgs };
           });
         const onQuestion = (q: { qid: string; questions: { question: string; header?: string; options: { label: string; description?: string }[] }[] }) =>
           patchTarget((b) => {
             if (b.msgs.some((m) => m.t === 'q' && m.qid === q.qid)) return b;
             return {
               ...b,
+              lastEventAt: Date.now(),
               msgs: [
                 ...b.msgs.filter((m) => m.t !== 'typing'),
                 { t: 'q', qid: q.qid, questions: q.questions },
@@ -411,6 +430,7 @@ export default function AppShell() {
             if (b.msgs.some((m) => m.t === 'ask' && m.approvalId === a.approvalId)) return b;
             return {
               ...b,
+              lastEventAt: Date.now(),
               msgs: [
                 ...b.msgs.filter((m) => m.t !== 'typing'),
                 {
@@ -438,6 +458,7 @@ export default function AppShell() {
             if (b.msgs.some((m) => m.t === 'botreq' && m.bid === r.bid)) return b;
             return {
               ...b,
+              lastEventAt: Date.now(),
               msgs: [
                 ...b.msgs.filter((m) => m.t !== 'typing'),
                 {
@@ -453,12 +474,42 @@ export default function AppShell() {
               ],
             };
           });
-        const pollTimer = setInterval(() => void pollPending(runId, { onApproval, onQuestion, onBotRequest }), 2500);
+        // Transport: live websocket push first (same subprotocol auth as the
+        // terminal), polling fallback on connect failure or mid-run drop.
+        // The cursor carries across so the fallback resumes without replay
+        // or gaps; the pending-poll only runs in polling mode (the socket
+        // delivers parked approval/question/bot-request cards itself).
+        const handlers = { onChunk, onAgent, onQuestion, onApproval, onBotRequest };
+        let cursor = 0;
+        const onCursor = (n: number): void => {
+          cursor = n;
+        };
         let finalOutput = '';
-        try {
-          finalOutput = await streamRunProgressive(runId, { onChunk, onAgent, onQuestion, onApproval, onBotRequest });
-        } finally {
-          clearInterval(pollTimer);
+        let wsOk = false;
+        const endpoint = computer?.endpoint ?? null;
+        if (endpoint) {
+          try {
+            const { authToken } = (await computerToken(15)) as { authToken: string };
+            const done = await streamRunWs(runId, handlers, { endpoint, token: authToken, onCursor });
+            finalOutput = done.output;
+            cursor = done.cursor;
+            wsOk = true;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            // Fatal run errors stay fatal — only transport drops fall back.
+            if (/agent run (failed|timed out)/.test(msg)) throw err;
+            if (msg !== 'ws-connect-timeout' && msg !== 'run stream closed before done' && msg !== 'run stream went silent') {
+              throw err;
+            }
+          }
+        }
+        if (!wsOk) {
+          const pollTimer = setInterval(() => void pollPending(runId, { onApproval, onQuestion, onBotRequest }), 2500);
+          try {
+            finalOutput = await streamRunProgressive(runId, handlers, { startCursor: cursor, onCursor });
+          } finally {
+            clearInterval(pollTimer);
+          }
         }
         // Run finished — the returned output is authoritative: the server
         // appends anything the streamed chunks missed (unrendered generated
@@ -474,7 +525,7 @@ export default function AppShell() {
               msgs.push({ t: 'b', x: finalOutput });
             }
           }
-          return { ...b, busy: false, msgs };
+          return { ...b, busy: false, runStartedAt: undefined, lastEventAt: undefined, msgs };
         });
         refreshCtx(targetId, targetModel);
         // Spend changed — drop the cached month total so the next send
@@ -550,6 +601,17 @@ export default function AppShell() {
         console.error('[AppShell] approval decision failed:', err),
       );
     }
+  };
+
+  // Per-question pick: stored on the card, never sent. The card submits one
+  // positional batch via answer() once every question is picked or skipped.
+  const selectQuestion = (msgIndex: number, qi: number, sel: string[] | undefined) => {
+    patchBot(cur, (b) => {
+      const target = b.msgs[msgIndex];
+      if (!target || target.t !== 'q' || target.done) return b;
+      const selections = target.questions.map((_, j) => (j === qi ? sel : target.selections?.[j]));
+      return { ...b, msgs: b.msgs.map((m, j) => (j === msgIndex && m.t === 'q' ? { ...m, selections } : m)) };
+    });
   };
 
   const answer = (msgIndex: number, answers: string[][]) => {
@@ -960,9 +1022,13 @@ export default function AppShell() {
         isChief={bot.isChiefOfStaff ?? false}
         onApprove={approve}
         onAnswer={answer}
+        onSelectQuestion={selectQuestion}
         onBotRequest={confirmBotRequest}
         onSuggest={(text) => sendText(text, [])}
       />
+      {bot.busy && typeof bot.runStartedAt === 'number' && (
+        <RunStatus startedAt={bot.runStartedAt} lastEventAt={bot.lastEventAt ?? bot.runStartedAt} />
+      )}
       <Composer
         botName={bot.name}
         draft={draft}

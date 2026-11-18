@@ -15,6 +15,9 @@ export type Msg =
         header?: string;
         options: Array<{ label: string; description?: string }>;
       }>;
+      /** Per-question picks (index-aligned with questions; undefined =
+       * unanswered, [] = skipped). Submitted as one batch via onAnswer. */
+      selections?: (string[] | undefined)[];
       done?: boolean;
     }
   | {
