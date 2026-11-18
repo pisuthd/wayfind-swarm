@@ -1,15 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus, Users } from 'lucide-react';
 import Mascot from '@/components/Mascot';
 
 interface RosterHeaderProps {
   onToggleSearch: () => void;
   onNew: () => void;
+  onTeam: () => void;
 }
 
-export default function RosterHeader({ onToggleSearch, onNew }: RosterHeaderProps) {
+export default function RosterHeader({ onToggleSearch, onNew, onTeam }: RosterHeaderProps) {
   return (
     <div className="flex items-center justify-between px-4 pb-3 pt-4">
       <Link href="/" aria-label="Back to Wayfind home" className="flex shrink-0 items-center gap-2.5 rounded-lg">
@@ -32,6 +33,14 @@ export default function RosterHeader({ onToggleSearch, onNew }: RosterHeaderProp
           className="grid h-9 w-9 place-items-center rounded-full bg-white text-navy shadow-sm hover:bg-slate-50"
         >
           <Plus className="h-4 w-4" strokeWidth={2.2} />
+        </button>
+        <button
+          onClick={onTeam}
+          aria-label="Start a team"
+          title="Start a team"
+          className="grid h-9 w-9 place-items-center rounded-full bg-white text-navy shadow-sm hover:bg-slate-50"
+        >
+          <Users className="h-4 w-4" strokeWidth={2.2} />
         </button>
       </div>
     </div>

@@ -16,6 +16,7 @@ function dataClient(): any {
 export interface BotRow {
   id: string;
   ownerId?: string | null;
+  teamId?: string | null;
   name: string;
   role?: string | null;
   description?: string | null;
@@ -32,6 +33,7 @@ function toRow(r: any): BotRow {
   return {
     id: r.id,
     ownerId: r.ownerId ?? null,
+    teamId: r.teamId ?? null,
     name: r.name,
     role: r.role ?? null,
     description: r.description ?? null,
@@ -57,6 +59,7 @@ export async function listBotsByOwner(ownerId: string): Promise<BotRow[]> {
 
 export async function createBotRow(input: {
   ownerId: string;
+  teamId?: string | null;
   name: string;
   role?: string;
   description?: string;
@@ -66,8 +69,9 @@ export async function createBotRow(input: {
 }): Promise<BotRow> {
   const { data, errors } = await dataClient().models.Bot.create({
     ownerId: input.ownerId,
+    ...(input.teamId ? { teamId: input.teamId } : {}),
     name: input.name,
-    ...(input.isChiefOfStaff ? { role: 'Chief of staff', isChiefOfStaff: true } : {}),
+    ...(input.isChiefOfStaff ? { role: input.role ?? 'Chief of staff', isChiefOfStaff: true } : {}),
     ...(!input.isChiefOfStaff && input.role ? { role: input.role } : {}),
     ...(!input.isChiefOfStaff && input.description ? { description: input.description } : {}),
     color: input.color,

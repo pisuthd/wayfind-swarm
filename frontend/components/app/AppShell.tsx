@@ -8,6 +8,8 @@ import type { MascotColor, MascotShape } from '@/components/Mascot';
 import Mascot from '@/components/Mascot';
 import Roster, { type RosterBot } from './Roster';
 import NewBotModal from './Roster/NewBotModal';
+import TeamPickerModal from './Roster/TeamPickerModal';
+import { importTeam, type TeamSpec } from '@/lib/teams';
 import BotPanel, { type BotEdits } from './BotPanel';
 import Thread from './Thread';
 import Composer from './Composer';
@@ -66,6 +68,7 @@ type ViewBot = RosterBot & {
 
 function toViewBot(r: {
   id: string;
+  teamId?: string | null;
   name: string;
   model?: string | null;
   description?: string | null;
@@ -78,6 +81,7 @@ function toViewBot(r: {
 }): ViewBot {
   return {
     id: r.id,
+    teamId: r.teamId ?? null,
     name: r.name,
     model: r.model ?? null,
     description: r.description ?? null,
@@ -102,6 +106,7 @@ export default function AppShell() {
   const [showSearch, setShowSearch] = useState(false);
   const [sideOpen, setSideOpen] = useState(false);
   const [botModalOpen, setBotModalOpen] = useState(false);
+  const [teamModalOpen, setTeamModalOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [skillsOpen, setSkillsOpen] = useState(false);
@@ -287,6 +292,7 @@ export default function AppShell() {
     const targetName = bot.name;
     const targetRole = bot.role;
     const targetIsChief = bot.isChiefOfStaff ?? false;
+    const targetTeamId = bot.teamId ?? null;
     const targetSkills = bot.skillsEnabled;
     const targetMcp = bot.mcpEnabled;
     const targetModel = bot.model ?? undefined;
@@ -307,10 +313,21 @@ export default function AppShell() {
     void (async () => {
       const finish = (fn: (b: ViewBot) => ViewBot) => patchTarget((b) => ({ ...fn(b), busy: false }));
       try {
+        // Scoped team: leads see every bot (cross-team reach, incl.
+        // lead-to-lead); members see their own team only. The same scope
+        // feeds the roster, the directory below, and mention autocomplete.
+        const scopeBots = targetIsChief ? bots : bots.filter((b) => (b.teamId ?? null) === targetTeamId);
+        const teammates = scopeBots.filter((b) => b.id && b.id !== targetId);
+        const teamDir =
+          teammates.length > 0
+            ? `\nYour team: ${teammates
+                .map((b) => `${b.name}${b.role ? ` (${b.role})` : ''}${b.isChiefOfStaff ? ', lead' : ''}`)
+                .join('; ')}. Mention a teammate with @Name to consult them.`
+            : '';
         const system = targetId
           ? targetRole
-            ? `You are "${targetName}". Role: ${targetRole}.`
-            : `You are "${targetName}". Your role is not defined yet.`
+            ? `You are "${targetName}". Role: ${targetRole}.${teamDir}`
+            : `You are "${targetName}". Your role is not defined yet.${teamDir}`
           : undefined;
         // User JWT for backend-authenticated agent tools (e.g.
         // schedule_task). Forwarded only — never logged or persisted.
@@ -320,18 +337,14 @@ export default function AppShell() {
         const runId = await postTask(v, targetId ?? undefined, system, targetSkills ?? undefined, targetMcp ?? undefined, {
           canManageBots: targetIsChief,
           ...(targetModel ? { model: targetModel } : {}),
-          // Chief: the model sees every bot so it can propose and @mention them.
-          // Member: the model sees the chief only — it can escalate/consult, nothing else.
-          roster: targetIsChief
-            ? bots
-                .filter((b) => b.id)
-                .map((b) => ({ id: b.id as string, name: b.name, role: b.role, skills: b.skillsEnabled, mcp: b.mcpEnabled }))
-            : (() => {
-                const chief = bots.find((b) => b.isChiefOfStaff && b.id && b.id !== targetId);
-                return chief
-                  ? [{ id: chief.id as string, name: chief.name, role: chief.role, skills: chief.skillsEnabled, mcp: chief.mcpEnabled }]
-                  : undefined;
-              })(),
+          // Lead: every bot (cross-team). Member: own team only.
+          // No roster at all when the bot is alone — message_bot stays hidden.
+          roster: (() => {
+            const entries = scopeBots
+              .filter((b) => b.id)
+              .map((b) => ({ id: b.id as string, name: b.name, role: b.role, skills: b.skillsEnabled, mcp: b.mcpEnabled }));
+            return entries.length > 0 ? entries : undefined;
+          })(),
           botName: targetName,
           ...(attachments.length > 0 ? { attachments } : {}),
           ...(user?.userId ? { ownerId: user.userId } : {}),
@@ -388,14 +401,31 @@ export default function AppShell() {
               ],
             };
           });
-        const onBotRequest = (r: { bid: string; botName: string; botRole?: string; botDescription?: string }) =>
+        const onBotRequest = (r: {
+          bid: string;
+          kind?: 'create' | 'update';
+          botName: string;
+          botTarget?: string;
+          botRole?: string;
+          botDescription?: string;
+          botNewName?: string;
+        }) =>
           patchTarget((b) => {
             if (b.msgs.some((m) => m.t === 'botreq' && m.bid === r.bid)) return b;
             return {
               ...b,
               msgs: [
                 ...b.msgs.filter((m) => m.t !== 'typing'),
-                { t: 'botreq', bid: r.bid, name: r.botName, role: r.botRole, description: r.botDescription },
+                {
+                  t: 'botreq',
+                  bid: r.bid,
+                  kind: r.kind ?? 'create',
+                  target: r.botTarget ?? (r.kind === 'update' ? r.botName : undefined),
+                  name: r.botName,
+                  role: r.botRole,
+                  description: r.botDescription,
+                  newName: r.botNewName,
+                },
               ],
             };
           });
@@ -514,6 +544,7 @@ export default function AppShell() {
     isChief: boolean,
     role?: string,
     description?: string,
+    teamId?: string | null,
   ): Promise<{ botId: string | null; error: string | null }> => {
     const ownerId = user?.userId;
     if (!ownerId) return { botId: null, error: 'Not signed in. Please sign in again.' };
@@ -522,9 +553,10 @@ export default function AppShell() {
     const pool = free.length > 0 ? free : lookPool;
     const look = pool[Math.floor(Math.random() * pool.length)];
     try {
-      // One chief of staff per user: unset the flag on the current chief first.
+      // One chief of staff per team: unset the flag on the current
+      // same-team chief first.
       if (isChief) {
-        const prev = bots.find((b) => b.isChiefOfStaff);
+        const prev = bots.find((b) => b.isChiefOfStaff && (b.teamId ?? null) === (teamId ?? null));
         if (prev) {
           await updateBotRow(prev.id, { isChiefOfStaff: false });
           setBots((botsPrev) => botsPrev.map((b) => (b.id === prev.id ? { ...b, isChiefOfStaff: false } : b)));
@@ -532,6 +564,7 @@ export default function AppShell() {
       }
       const row = await createBotRow({
         ownerId,
+        ...(teamId ? { teamId } : {}),
         name,
         ...(isChief ? { isChiefOfStaff: true } : {}),
         ...(!isChief && role ? { role } : {}),
@@ -546,7 +579,8 @@ export default function AppShell() {
     }
   };
 
-  // Chief-proposed bot: confirm card → create without leaving the thread.
+  // Lead-proposed bot change: confirm card → apply without leaving the
+  // thread. Creates join the lead's team; updates are same-team only.
   // Name uniqueness is enforced here so the model retries with another name.
   const confirmBotRequest = (msgIndex: number, ok: boolean) => {
     const chief = bots[cur];
@@ -554,6 +588,7 @@ export default function AppShell() {
     if (!chief?.id || !target || target.t !== 'botreq' || target.done !== undefined) return;
     const chiefId = chief.id;
     const bid = target.bid;
+    const kind = target.kind ?? 'create';
     // Locate the chief by id at patch time — insertBot prepends, shifting indices.
     const patchChief = (fn: (b: ViewBot) => ViewBot) =>
       setBots((prev) => {
@@ -570,6 +605,47 @@ export default function AppShell() {
       );
       return;
     }
+    if (kind === 'update') {
+      void (async () => {
+        const cancel = (error: string) => {
+          patchChief((b) => ({
+            ...b,
+            msgs: b.msgs.map((m, j) => (j === msgIndex && m.t === 'botreq' ? { ...m, done: 'cancelled' as const } : m)),
+          }));
+          void answerBotRequest(bid, { decision: 'cancel', error }).catch((err) =>
+            console.error('[AppShell] bot request resolve failed:', err),
+          );
+        };
+        const member = bots.find((b) => b.id && b.name.toLowerCase() === (target.target ?? target.name).toLowerCase());
+        if (!member?.id) return cancel(`No bot named "${target.target ?? target.name}" — it may have been deleted.`);
+        if ((member.teamId ?? null) !== (chief.teamId ?? null)) {
+          return cancel(`"${member.name}" is on another team — leads can only edit their own members.`);
+        }
+        if (target.newName && bots.some((b) => b.id !== member.id && b.name.toLowerCase() === target.newName!.toLowerCase())) {
+          return cancel(`A bot named "${target.newName}" already exists — pick another name.`);
+        }
+        const patch: { name?: string; role?: string; description?: string } = {
+          ...(target.newName ? { name: target.newName } : {}),
+          ...(target.role ? { role: target.role } : {}),
+          ...(target.description ? { description: target.description } : {}),
+        };
+        try {
+          await updateBotRow(member.id, patch);
+        } catch (err) {
+          return cancel(err instanceof Error ? err.message : 'Update failed.');
+        }
+        const mid = member.id;
+        setBots((prev) => prev.map((b) => (b.id === mid ? { ...b, ...patch } : b)));
+        patchChief((b) => ({
+          ...b,
+          msgs: b.msgs.map((m, j) => (j === msgIndex && m.t === 'botreq' ? { ...m, done: 'updated' as const } : m)),
+        }));
+        void answerBotRequest(bid, { decision: 'confirm' }).catch((err) =>
+          console.error('[AppShell] bot request confirm failed:', err),
+        );
+      })();
+      return;
+    }
     const nameTaken = bots.some((b) => b.name.toLowerCase() === target.name.toLowerCase());
     if (nameTaken) {
       const error = `A bot named "${target.name}" already exists — pick another name.`;
@@ -583,7 +659,9 @@ export default function AppShell() {
       return;
     }
     void (async () => {
-      const { botId, error } = await insertBot(target.name, false, target.role, target.description);
+      // Lead-created bots join the lead's team, so the roster scope and team
+      // directory pick them up immediately.
+      const { botId, error } = await insertBot(target.name, false, target.role, target.description, chief.teamId ?? null);
       // insertBot prepends to the roster — shift selection so the chief thread stays open.
       setCur((c) => c + 1);
       const done: 'created' | 'cancelled' = botId ? 'created' : 'cancelled';
@@ -603,6 +681,43 @@ export default function AppShell() {
       setSideOpen(false);
     }
     return error;
+  };
+
+  // Team import: creates every member (+ lead) under one teamId, then
+  // selects the lead so the user lands in the coordinating thread.
+  const createTeam = async (team: TeamSpec): Promise<string | null> => {
+    const ownerId = user?.userId;
+    if (!ownerId) return 'Not signed in. Please sign in again.';
+    try {
+      const rows = await importTeam(ownerId, team, bots.map((b) => b.name));
+      if (rows.length === 0) return 'Import created no bots.';
+      setBots((prev) => [...rows.map(toViewBot), ...prev]);
+      setCur(0);
+      setSideOpen(false);
+      return null;
+    } catch (err) {
+      console.error('[AppShell] team import failed:', err);
+      return err instanceof Error ? err.message : 'Import failed. Check your connection and try again.';
+    }
+  };
+
+  // Delete a whole team: removes every member bot server-side, then locally.
+  const deleteTeam = (teamId: string, teamName: string) => {
+    const members = bots.filter((b) => (b.teamId ?? null) === teamId && b.id);
+    if (members.length === 0) return;
+    if (!window.confirm(`Delete ${teamName} and its ${members.length} bot${members.length === 1 ? '' : 's'}?`)) return;
+    const ids = new Set(members.map((m) => m.id));
+    void (async () => {
+      for (const m of members) {
+        try {
+          await deleteBotRow(m.id);
+        } catch (err) {
+          console.error('[AppShell] team member delete failed:', err);
+        }
+      }
+      setBots((prev) => prev.filter((b) => !ids.has(b.id)));
+      setCur(0);
+    })();
   };
 
   // Model switch: persist to the bot, then reset the session — a new model
@@ -657,9 +772,11 @@ export default function AppShell() {
     if (!target) return 'No bot selected.';
     const normalized = edits.isChiefOfStaff && !edits.role.trim() ? { ...edits, role: 'Chief of staff' } : edits;
     try {
-      // One chief of staff per user: unset the flag everywhere else first.
+      // One chief of staff per team: unset the flag on same-team chiefs first.
       if (normalized.isChiefOfStaff && !target.isChiefOfStaff) {
-        const others = bots.filter((b) => b.isChiefOfStaff && b.id !== target.id);
+        const others = bots.filter(
+          (b) => b.isChiefOfStaff && b.id !== target.id && (b.teamId ?? null) === (target.teamId ?? null),
+        );
         for (const o of others) {
           await updateBotRow(o.id, { isChiefOfStaff: false });
         }
@@ -712,12 +829,15 @@ export default function AppShell() {
         showSearch={showSearch}
         onToggleSearch={() => setShowSearch((s) => !s)}
         onNew={() => setBotModalOpen(true)}
+        onTeam={() => setTeamModalOpen(true)}
+        onDeleteTeam={deleteTeam}
         open={sideOpen}
         onClose={() => setSideOpen(false)}
       />
       {main}
       {after}
       <NewBotModal open={botModalOpen} onClose={() => setBotModalOpen(false)} onCreate={createBot} taken={bots.map((b) => b.name)} />
+      <TeamPickerModal open={teamModalOpen} onClose={() => setTeamModalOpen(false)} onImport={createTeam} takenNames={bots.map((b) => b.name)} />
       {bot && (
         <>
           <SkillsPickerModal
@@ -831,9 +951,8 @@ export default function AppShell() {
         compacting={compacting}
         ownerId={user?.userId}
         mentionNames={(() => {
-          if (bot.isChiefOfStaff) return bots.filter((b) => b.id && b.id !== bot.id).map((b) => b.name);
-          const chief = bots.find((b) => b.isChiefOfStaff && b.id);
-          return chief ? [chief.name] : [];
+          const scope = bot.isChiefOfStaff ? bots : bots.filter((b) => (b.teamId ?? null) === (bot.teamId ?? null));
+          return scope.filter((b) => b.id && b.id !== bot.id).map((b) => b.name);
         })()}
         disabled={!computerReady || bot.busy}
         disabledHint={!computerReady ? bootHint : undefined}

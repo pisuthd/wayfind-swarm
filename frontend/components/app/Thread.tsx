@@ -39,9 +39,9 @@ const CHIEF_SUGGESTION = {
 };
 
 const MEMBER_SUGGESTION = {
-  label: 'Ask the chief',
-  desc: 'Escalate to your chief of staff',
-  prompt: 'Ask my chief of staff for help with this.',
+  label: 'Ask the team',
+  desc: 'Consult a teammate with @Name',
+  prompt: 'Ask my team for help with this.',
 };
 
 const SUGGESTIONS = [
@@ -281,21 +281,42 @@ export default function Thread({ bot, isChief, onApprove, onAnswer, onBotRequest
             );
           }
           if (m.t === 'botreq') {
+            const isUpdate = m.kind === 'update';
             return (
               <div key={i} className="msg-in rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs font-bold uppercase tracking-wide text-cta">New Bot</p>
+                <p className="text-xs font-bold uppercase tracking-wide text-cta">{isUpdate ? 'Update Bot' : 'New Bot'}</p>
                 <p className="mt-0.5 font-bold text-navy">
-                  {m.name}
-                  {m.role && <span className="font-medium text-heroslate"> · {m.role}</span>}
+                  {isUpdate ? (m.target ?? m.name) : m.name}
+                  {!isUpdate && m.role && <span className="font-medium text-heroslate"> · {m.role}</span>}
                 </p>
-                {m.description && <p className="mt-1 text-sm text-heroslate">{m.description}</p>}
+                {isUpdate ? (
+                  <ul className="mt-1 space-y-0.5 text-sm text-heroslate">
+                    {m.newName && (
+                      <li>
+                        Name → <span className="font-semibold text-navy">{m.newName}</span>
+                      </li>
+                    )}
+                    {m.role && (
+                      <li>
+                        Role → <span className="font-semibold text-navy">{m.role}</span>
+                      </li>
+                    )}
+                    {m.description && (
+                      <li>
+                        Brief → <span className="font-semibold text-navy">{m.description}</span>
+                      </li>
+                    )}
+                  </ul>
+                ) : (
+                  m.description && <p className="mt-1 text-sm text-heroslate">{m.description}</p>
+                )}
                 {m.done === undefined ? (
                   <div className="mt-3 flex items-center gap-2">
                     <button
                       onClick={() => onBotRequest?.(i, true)}
                       className="rounded-full bg-navy px-4 py-1.5 text-sm font-semibold text-white hover:bg-[#1c3350]"
                     >
-                      Create Bot
+                      {isUpdate ? 'Apply update' : 'Create Bot'}
                     </button>
                     <button
                       onClick={() => onBotRequest?.(i, false)}
@@ -305,8 +326,8 @@ export default function Thread({ bot, isChief, onApprove, onAnswer, onBotRequest
                     </button>
                   </div>
                 ) : (
-                  <p className={`mt-2 text-sm font-bold ${m.done === 'created' ? 'text-blagoon' : 'text-slate-400'}`}>
-                    {m.done === 'created' ? '✓ Created' : 'Declined'}
+                  <p className={`mt-2 text-sm font-bold ${m.done === 'cancelled' ? 'text-slate-400' : 'text-blagoon'}`}>
+                    {m.done === 'created' ? '✓ Created' : m.done === 'updated' ? '✓ Updated' : 'Declined'}
                   </p>
                 )}
               </div>

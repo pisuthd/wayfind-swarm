@@ -17,6 +17,8 @@ interface RosterProps {
   showSearch: boolean;
   onToggleSearch: () => void;
   onNew: () => void;
+  onTeam: () => void;
+  onDeleteTeam?: (teamId: string, teamName: string) => void;
   open: boolean;
   onClose: () => void;
 }
@@ -30,6 +32,8 @@ export default function Roster({
   showSearch,
   onToggleSearch,
   onNew,
+  onTeam,
+  onDeleteTeam,
   open,
   onClose,
 }: RosterProps) {
@@ -45,9 +49,9 @@ export default function Roster({
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <RosterHeader onToggleSearch={onToggleSearch} onNew={onNew} />
+        <RosterHeader onToggleSearch={onToggleSearch} onNew={onNew} onTeam={onTeam} />
         <RosterSearch query={query} onQuery={onQuery} showSearch={showSearch} />
-        <RosterList items={items} cur={cur} onSelect={onSelect} />
+        <RosterList items={items} cur={cur} onSelect={onSelect} onDeleteTeam={onDeleteTeam} />
         <RosterFooter />
       </aside>
     </>

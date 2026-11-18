@@ -90,7 +90,15 @@ export interface StreamHandlers {
     qid: string;
     questions: Array<{ question: string; header?: string; options: Array<{ label: string; description?: string }> }>;
   }) => void;
-  onBotRequest?: (r: { bid: string; botName: string; botRole?: string; botDescription?: string }) => void;
+  onBotRequest?: (r: {
+    bid: string;
+    kind?: 'create' | 'update';
+    botName: string;
+    botTarget?: string;
+    botRole?: string;
+    botDescription?: string;
+    botNewName?: string;
+  }) => void;
 }
 
 /** Same as fetch, but against the relay with Cognito auth. */
@@ -141,9 +149,12 @@ function applyRunEvent(e: RunEvent, handlers: StreamHandlers, output: string): s
   } else if (e.type === 'bot_request' && typeof e.bid === 'string' && typeof e.botName === 'string') {
     handlers.onBotRequest?.({
       bid: e.bid as string,
+      kind: e.botKind === 'update' ? 'update' : 'create',
       botName: e.botName as string,
+      botTarget: typeof e.botTarget === 'string' ? (e.botTarget as string) : undefined,
       botRole: typeof e.botRole === 'string' ? (e.botRole as string) : undefined,
       botDescription: typeof e.botDescription === 'string' ? (e.botDescription as string) : undefined,
+      botNewName: typeof e.botNewName === 'string' ? (e.botNewName as string) : undefined,
     });
   } else if (e.type === 'done') {
     if (typeof e.output === 'string') output = e.output;
@@ -234,7 +245,7 @@ interface PendingQuestion {
 interface PendingBotRequest {
   id: string;
   runId: string;
-  request: { name: string; role?: string; description?: string };
+  request: { kind?: 'create' | 'update'; name: string; target?: string; role?: string; description?: string };
 }
 
 /** Poll the pending-interaction lists for one run and feed the same handlers
@@ -265,9 +276,12 @@ export async function pollPending(
   for (const p of ((b as { requests?: PendingBotRequest[] }).requests ?? []).filter((p) => p?.runId === runId)) {
     handlers.onBotRequest?.({
       bid: p.id,
-      botName: p.request.name,
+      kind: p.request.kind === 'update' ? 'update' : 'create',
+      botName: p.request.target ?? p.request.name,
+      botTarget: p.request.target,
       botRole: p.request.role,
       botDescription: p.request.description,
+      botNewName: p.request.kind === 'update' ? p.request.name : undefined,
     });
   }
 }

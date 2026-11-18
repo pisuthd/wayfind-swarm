@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.0',
+    date: '2026-11-18',
+    tagline: 'Hire whole teams in one click, and every bot can talk to its teammates.',
+    added: [
+      'Start a team — Software Development, Design Studio, or Video Production, each arriving with its own lead.',
+      'Any bot can @mention any teammate; leads can reach across teams and update their own members by chat.',
+    ],
+  },
+  {
     version: '1.2.0',
     date: '2026-11-13',
     tagline: 'Bots can now use crypto wallets, and the API powers verifiable sandbox runs.',

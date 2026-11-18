@@ -20,10 +20,15 @@ export type Msg =
   | {
       t: 'botreq';
       bid: string;
+      kind?: 'create' | 'update';
+      /** update target bot name (equals name for updates). */
+      target?: string;
       name: string;
       role?: string;
       description?: string;
-      done?: 'created' | 'cancelled';
+      /** proposed new name for an update request. */
+      newName?: string;
+      done?: 'created' | 'updated' | 'cancelled';
     };
 
 /** Minimal bot shape the Thread renders (AppShell's ViewBot satisfies this). */
