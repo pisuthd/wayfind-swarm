@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronUp, Cpu, Loader2 } from 'lucide-react';
+import { Check, ChevronUp, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { getProviders } from '@/lib/agent';
 import { friendlyModelName } from '@/lib/models';
@@ -147,7 +147,6 @@ export default function ModelPicker({ value, onChange, disabled = false, compact
           compact ? 'h-7 px-2.5' : 'h-10 px-3'
         }`}
       >
-        <Cpu className={`${compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} shrink-0`} strokeWidth={2.2} />
         <span className={`truncate font-bold ${compact ? 'text-[11px]' : 'text-xs'}`}>{currentLabel}</span>
         <ChevronUp className={`${compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} shrink-0 transition-transform ${open ? '' : 'rotate-180'}`} />
       </button>
