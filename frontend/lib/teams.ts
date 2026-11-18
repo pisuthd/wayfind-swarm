@@ -17,6 +17,9 @@ export interface TeamSpec {
   name: string;
   blurb: string;
   members: TeamMemberSpec[];
+  /** False hides the team from the Start-a-team modal and disables its
+   * landing card. Kept in the catalog so existing teams still resolve. */
+  available?: boolean;
 }
 
 /** One-click team templates, mirroring the landing Teams section.
@@ -70,6 +73,7 @@ export const TEAMS: TeamSpec[] = [
     id: 'design-studio',
     name: 'Design Studio',
     blurb: 'From brief to polished mock.',
+    available: false,
     members: [
       {
         name: 'Aria',
@@ -107,6 +111,7 @@ export const TEAMS: TeamSpec[] = [
     id: 'video-production',
     name: 'Video Production',
     blurb: 'Script to final cut.',
+    available: false,
     members: [
       {
         name: 'Producer',

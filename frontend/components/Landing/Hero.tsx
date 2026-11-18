@@ -10,7 +10,7 @@ export default function Hero({ onSignIn }: HeroProps) {
   return (
     <header className="mx-auto max-w-6xl px-6 pb-16 pt-6 md:pb-24 md:pt-8">
       <p className="text-xs font-semibold uppercase tracking-[0.25em] text-ink/70">
-          A swarm, ready for hire
+          AI teams, ready for hire
       </p>
       <h1 className="mt-6 max-w-4xl font-brico text-5xl font-bold leading-[1.0] md:text-8xl">
           An entire team, hired in one click.

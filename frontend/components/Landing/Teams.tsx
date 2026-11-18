@@ -13,6 +13,8 @@ interface TeamCard {
   tagline: string;
   roles: string;
   slug: string;
+  /** Disabled cards render as non-clickable placeholders with a badge. */
+  disabled?: boolean;
 }
 
 const categories = ['All', 'Build', 'Grow'] as const;
@@ -33,6 +35,7 @@ const cards: TeamCard[] = [
     tagline: 'Brand, UI, and clickable prototypes.',
     roles: 'Brand Designer · UI Designer · Prototyper.',
     slug: 'design-studio',
+    disabled: true,
   },
   {
     members: ['grape', 'lagoon', 'amber'],
@@ -41,6 +44,7 @@ const cards: TeamCard[] = [
     tagline: 'Ads to series, from script to final cut.',
     roles: 'Creative Director · Clip Producer · QA.',
     slug: 'video-production',
+    disabled: true,
   },
 ];
 
@@ -76,26 +80,47 @@ export default function Teams() {
       </div>
 
       <div key={active} className="fade-up mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {visible.map((c) => (
-          <Link
-            key={c.name}
-            href={`/app?hire=${c.slug}`}
-            className="group flex flex-col rounded-2xl border border-gray-200 p-7 transition hover:-translate-y-1 hover:border-navy/40 hover:shadow-lg"
-          >
-            <div className="flex -space-x-1.5">
-              {c.members.map((color, i) => (
-                <span key={color} className="rounded-full ring-2 ring-white">
-                  <Mascot color={color} size="xs" shape={stackShapes[i % stackShapes.length]} motion="none" />
-                </span>
-              ))}
+        {visible.map((c) =>
+          c.disabled ? (
+            <div
+              key={c.name}
+              aria-disabled="true"
+              title="Coming soon"
+              className="flex cursor-not-allowed flex-col rounded-2xl border border-gray-200 p-7 opacity-60"
+            >
+              <div className="flex -space-x-1.5">
+                {c.members.map((color, i) => (
+                  <span key={color} className="rounded-full ring-2 ring-white">
+                    <Mascot color={color} size="xs" shape={stackShapes[i % stackShapes.length]} motion="none" />
+                  </span>
+                ))}
+              </div>
+              <p className="mt-5 font-brico text-xl font-bold">{c.name}</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-ink">{c.tagline}</p>
+              <p className="mt-3 text-xs leading-relaxed text-ink/70">{c.roles}</p>
+              <p className="mt-4 w-fit rounded-full bg-mist px-3 py-1 text-xs font-bold text-ink/70">Coming soon</p>
             </div>
-            <p className="mt-5 font-brico text-xl font-bold">
-              {c.name} <span aria-hidden="true" className="ml-1 inline-block transition group-hover:translate-x-1">→</span>
-            </p>
-            <p className="mt-1.5 text-sm leading-relaxed text-ink">{c.tagline}</p>
-            <p className="mt-3 text-xs leading-relaxed text-ink/70">{c.roles}</p>
-          </Link>
-        ))}
+          ) : (
+            <Link
+              key={c.name}
+              href={`/app?hire=${c.slug}`}
+              className="group flex flex-col rounded-2xl border border-gray-200 p-7 transition hover:-translate-y-1 hover:border-navy/40 hover:shadow-lg"
+            >
+              <div className="flex -space-x-1.5">
+                {c.members.map((color, i) => (
+                  <span key={color} className="rounded-full ring-2 ring-white">
+                    <Mascot color={color} size="xs" shape={stackShapes[i % stackShapes.length]} motion="none" />
+                  </span>
+                ))}
+              </div>
+              <p className="mt-5 font-brico text-xl font-bold">
+                {c.name} <span aria-hidden="true" className="ml-1 inline-block transition group-hover:translate-x-1">→</span>
+              </p>
+              <p className="mt-1.5 text-sm leading-relaxed text-ink">{c.tagline}</p>
+              <p className="mt-3 text-xs leading-relaxed text-ink/70">{c.roles}</p>
+            </Link>
+          ),
+        )}
       </div>
     </section>
   );

@@ -82,7 +82,7 @@ export default function TeamPickerModal({ open, onClose, onImport, takenNames = 
                 Hire a whole crew in one click. Every team arrives with its own lead.
               </p>
               <div className="mt-4 space-y-2.5">
-                {TEAMS.map((team) => (
+                {TEAMS.filter((t) => t.available !== false).map((team) => (
                   <div key={team.id} className="rounded-2xl border border-navy/10 p-4">
                     <div className="flex items-center justify-between gap-2">
                       <div>

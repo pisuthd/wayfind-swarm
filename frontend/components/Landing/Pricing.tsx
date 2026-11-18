@@ -33,7 +33,7 @@ export default function Pricing() {
           ))}
         </div>
         <p className="mt-6 text-xs text-white/50">
-          Per input tokens, from-price shown. Full input / cached / output rates at checkout.
+          Early access: $1 free credit included, no card required.
         </p>
       </div>
     </section>
