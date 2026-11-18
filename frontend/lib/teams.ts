@@ -1,4 +1,4 @@
-import { createBotRow, type BotRow } from './bots';
+import { createBotRow, updateBotRow, type BotRow } from './bots';
 
 export interface TeamMemberSpec {
   name: string;
@@ -40,16 +40,22 @@ export const TEAMS: TeamSpec[] = [
       {
         name: 'Reef',
         role: 'Frontend developer',
-        description: 'You build user interfaces with React, Vite, and Tailwind. Run the dev server on port 5173 so the user can preview.',
+        description:
+          'You build user interfaces with React, Vite, and Tailwind. Run the dev server on port 5173 so the user can preview. ' +
+          'You have the vercel-react-best-practices and frontend-ui-engineering skills — load the relevant one with the skill tool before writing or reviewing any UI code.',
         color: 'lagoon',
         shape: 'blob',
+        skills: ['vercel-react-best-practices', 'frontend-ui-engineering'],
       },
       {
         name: 'Moss',
         role: 'Backend developer',
-        description: 'You build APIs and data models. Keep endpoints OpenAI-compatible and documented.',
+        description:
+          'You build APIs and data models. Keep endpoints OpenAI-compatible and documented. ' +
+          'You have the backend-craft and backend-architecture skills — load the relevant one with the skill tool before writing or reviewing any backend code.',
         color: 'moss',
         shape: 'circle',
+        skills: ['backend-craft', 'backend-architecture'],
       },
       {
         name: 'Ash',
@@ -156,7 +162,13 @@ export async function importTeam(ownerId: string, team: TeamSpec, taken: string[
       color: m.color,
       shape: m.shape,
     });
-    rows.push(row);
+    // createBotRow has no skills field — apply the allowlist right after.
+    if (m.skills) {
+      await updateBotRow(row.id, { skillsEnabled: m.skills });
+      rows.push({ ...row, skillsEnabled: m.skills });
+    } else {
+      rows.push(row);
+    }
   }
   return rows;
 }
