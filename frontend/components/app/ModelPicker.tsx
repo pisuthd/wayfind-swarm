@@ -23,7 +23,7 @@ interface Option {
 /** Model pill for the composer bar. Dropdown opens upward, options from the
  * computer's provider catalog plus an account-default entry. */
 /** Catalog default when the computer is unreachable (mirrors providers.json). */
-const FALLBACK_DEFAULT = 'zai-org/GLM-5.3-Flash';
+const FALLBACK_DEFAULT = 'deepseek-ai/DeepSeek-V4.1-Flash-1017';
 
 export default function ModelPicker({ value, onChange, disabled = false, compact = false }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
