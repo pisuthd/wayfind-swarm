@@ -9,6 +9,7 @@ import {
   CONNECTOR_TYPES,
   connectorServerName,
   connectorSetup,
+  findInstalledServer,
 } from '@/lib/connectors';
 import type { Connector, ConnectorTypeFilter } from '@/lib/connectors';
 import { getMcpServers, patchMcpServer, restartMcpServer, saveMcpServer } from '@/lib/agent';
@@ -126,7 +127,7 @@ export default function ConnectorsModal({ open, onClose, computerReady }: Connec
         ok: true,
         message:
           live && live.tools > 0
-            ? `Connected — ${live.tools} tools live for all your Bots.`
+            ? `Connected — ${live.tools} tools live for all your Bots. Every ${c.status === 'Via Web3 Gateway' ? 'Web3' : 'Zoho'} connector now shows as installed (one shared gateway).`
             : c.status === 'Via Web3 Gateway'
               ? 'Saved, but the computer reports 0 tools — check the endpoint URL and wallet connection in the Web3 app, then retry.'
               : 'Saved, but the computer reports 0 tools — check the endpoint URL and permissions in Zoho, then retry.',
@@ -139,7 +140,7 @@ export default function ConnectorsModal({ open, onClose, computerReady }: Connec
   }
 
   const setup = selected ? connectorSetup(selected) : undefined;
-  const installed = selected ? servers[connectorServerName(selected)] : undefined;
+  const installed = selected ? findInstalledServer(selected, servers) : undefined;
 
   return createPortal(
     <AnimatePresence>
@@ -221,7 +222,7 @@ export default function ConnectorsModal({ open, onClose, computerReady }: Connec
                   )}
                   <ul className="divide-y divide-navy/5">
                     {list.map((c) => {
-                      const live = servers[connectorServerName(c)];
+                      const live = findInstalledServer(c, servers);
                       return (
                         <li key={c.name}>
                           <button

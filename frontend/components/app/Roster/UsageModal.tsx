@@ -340,8 +340,7 @@ export default function UsageModal({ open, onClose, ownerId }: UsageModalProps) 
             </div>
             <div className="flex items-center justify-between gap-3 p-4 pt-2">
               <p className="text-[11px] leading-snug text-heroslate">
-                We&apos;re in early access — every account gets $1 free credit to try things out. Top-ups coming
-                soon.
+                Early access: every account gets $1 free credit to try things out. Top-ups coming soon.
               </p>
               <button
                 onClick={onClose}

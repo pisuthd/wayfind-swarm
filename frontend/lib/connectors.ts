@@ -77,11 +77,51 @@ export function connectorSetup(c: Connector): ConnectorSetup | undefined {
   return { provider: 'zoho-mcp', service };
 }
 
+/** Gateway prefix for a connector: one shared MCP server per gateway, so
+ * importing any single connector lights up every sibling on the same
+ * gateway (all Zoho apps share the Zoho MCP endpoint; all Web3 connectors
+ * share the Web3 Gateway endpoint). */
+function connectorGateway(c: Connector): 'zoho' | 'web3' | null {
+  if (c.status === 'Via Web3 Gateway') return 'web3';
+  if (c.status === 'Via Zoho MCP') return 'zoho';
+  return null;
+}
+
 /** MCP server name for an imported connector — matches McpServerInfo naming.
- * Web3 connectors get their own prefix so they never collide with Zoho ones. */
+ * Gateway connectors share one server per gateway (`zoho-mcp` /
+ * `web3-gateway`); anything else keeps its own slug name. */
 export function connectorServerName(c: Connector): string {
+  const gw = connectorGateway(c);
+  if (gw === 'web3') return 'web3-gateway';
+  if (gw === 'zoho') return 'zoho-mcp';
+  return `zoho-${connectorSlug(c.name)}`;
+}
+
+/** Pre-shared-name server row for a connector (e.g. `web3-mezo-finance`).
+ * Kept so imports made before the gateway sharing still read as installed. */
+export function connectorLegacyServerName(c: Connector): string {
   const prefix = c.status === 'Via Web3 Gateway' ? 'web3' : 'zoho';
   return `${prefix}-${connectorSlug(c.name)}`;
+}
+
+/** Installed server for a connector: the shared gateway row first, then the
+ * connector's own legacy row, then any same-gateway row (a sibling imported
+ * before the sharing — same endpoint, same tools). */
+export function findInstalledServer<T extends { name: string }>(
+  c: Connector,
+  servers: Record<string, T>,
+): T | undefined {
+  const shared = servers[connectorServerName(c)];
+  if (shared) return shared;
+  const gw = connectorGateway(c);
+  if (!gw) return undefined;
+  const legacy = servers[connectorLegacyServerName(c)];
+  if (legacy) return legacy;
+  const prefix = `${gw}-`;
+  for (const name of Object.keys(servers)) {
+    if (name !== connectorServerName(c) && name.startsWith(prefix)) return servers[name];
+  }
+  return undefined;
 }
 
 // Placeholder inventory — mirrors the landing Connectors section.
