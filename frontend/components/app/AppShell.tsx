@@ -245,7 +245,9 @@ export default function AppShell() {
     patchBot(targetIndex, (b) => ({
       ...b,
       busy: true,
-      msgs: includeUserBubble ? [...b.msgs, { t: 'u', x: '/compact' }, { t: 'typing' }] : [...b.msgs, { t: 'typing' }],
+      msgs: includeUserBubble
+        ? [...b.msgs, { t: 'u', x: '/compact' }, { t: 'typing', since: Date.now() }]
+        : [...b.msgs, { t: 'typing', since: Date.now() }],
     }));
     const patchTarget = (fn: (b: ViewBot) => ViewBot) => patchBotById(targetId, fn);
     void (async () => {
@@ -303,7 +305,9 @@ export default function AppShell() {
     patchBot(targetIndex, (b) => ({
       ...b,
       busy: true,
-      msgs: hello ? [...b.msgs, { t: 'typing' }] : [...b.msgs, { t: 'u', x: v || '(attached files)', ...(attachments.length > 0 ? { files: attachments } : {}) }, { t: 'typing' }],
+      msgs: hello
+        ? [...b.msgs, { t: 'typing', since: Date.now() }]
+        : [...b.msgs, { t: 'u', x: v || '(attached files)', ...(attachments.length > 0 ? { files: attachments } : {}) }, { t: 'typing', since: Date.now() }],
     }));
     // Stable identity for the whole run: roster inserts shift indices, so
     // every patch below keys on the bot id. Falls back to the captured

@@ -5,7 +5,7 @@ export type Msg =
   | { t: 'u'; x: string; files?: string[] }
   | { t: 'b'; x: string }
   | { t: 'tool'; x: string }
-  | { t: 'typing' }
+  | { t: 'typing'; since?: number }
   | { t: 'ask'; title: string; x: string; ok: string; after: string; done?: 'ok' | 'no'; approvalId?: string; permission?: string }
   | {
       t: 'q';

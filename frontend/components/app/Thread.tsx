@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FileText } from 'lucide-react';
 import Markdown from './Markdown';
 import VmImage from './VmImage';
-import type { Msg, ThreadBot } from '@/lib/chat';
+import { isImageProgress, type Msg, type ThreadBot } from '@/lib/chat';
 import { viewFileUrl } from '@/lib/agent';
 
 /** Split a user message into display text + attached workspace paths.
@@ -61,6 +61,19 @@ const SUGGESTIONS = [
     prompt: 'Check the Bitcoin price from https://api.coinbase.com/v2/prices/BTC-USD/spot',
   },
 ];
+
+/** Elapsed run clock for the typing row — ticks locally so the thread only
+ * re-renders this bubble, not the whole list, every second. */
+function RunClock({ since }: { since: number }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const s = Math.max(0, Math.floor((Date.now() - since) / 1000));
+  const label = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+  return <span className="tabular-nums">working · {label}</span>;
+}
 
 /** Free-text answer row inside a question card. Sends the typed text as the answer. */
 function CustomAnswer({ onSend, secret }: { onSend: (text: string) => void; secret?: boolean }) {
@@ -270,13 +283,35 @@ export default function Thread({ bot, isChief, onApprove, onAnswer, onBotRequest
             );
           }
           if (m.t === 'typing') {
+            // Last activity = most recent tool row (skips image-progress
+            // skeletons). Zero new state — derived from the messages.
+            let activity: string | null = null;
+            for (let j = bot.msgs.length - 1; j >= 0; j -= 1) {
+              const prev = bot.msgs[j];
+              if (prev.t === 'tool' && !isImageProgress(prev.x)) {
+                activity = prev.x;
+                break;
+              }
+            }
             return (
-              <div key={i} className="msg-in w-fit rounded-2xl rounded-bl-sm bg-white px-4 py-3 shadow-sm">
-                <span className="typing-dots flex gap-1">
-                  <i className="h-2 w-2 rounded-full bg-slate-400" />
-                  <i className="h-2 w-2 rounded-full bg-slate-400" />
-                  <i className="h-2 w-2 rounded-full bg-slate-400" />
+              <div key={i} className="msg-in w-fit max-w-full rounded-2xl rounded-bl-sm bg-white px-4 py-3 shadow-sm">
+                <span className="flex items-center gap-2">
+                  <span className="typing-dots flex gap-1">
+                    <i className="h-2 w-2 rounded-full bg-slate-400" />
+                    <i className="h-2 w-2 rounded-full bg-slate-400" />
+                    <i className="h-2 w-2 rounded-full bg-slate-400" />
+                  </span>
+                  {typeof m.since === 'number' && (
+                    <span className="text-xs font-semibold text-heroslate">
+                      <RunClock since={m.since} />
+                    </span>
+                  )}
                 </span>
+                {activity && (
+                  <p className="mt-1 truncate text-xs text-heroslate/80" title={activity}>
+                    {activity}
+                  </p>
+                )}
               </div>
             );
           }
