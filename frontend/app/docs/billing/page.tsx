@@ -3,7 +3,7 @@ import { Callout, DocTable, H2, P } from '@/components/docs/ui';
 
 export const metadata: Metadata = {
   title: 'Billing — Wayfind Docs',
-  description: 'Wayfind Cloud billing: plans, credits, usage tracking, and the AI models behind your Bots.',
+  description: 'Wayfind SWARM billing: the $1 early-access credit, the monthly cap, and the Usage panel.',
 };
 
 export default function DocsBillingPage() {
@@ -11,36 +11,46 @@ export default function DocsBillingPage() {
     <article>
       <h1 className="font-brico text-4xl font-extrabold tracking-tight text-navy sm:text-5xl">Billing</h1>
       <P>
-        Free in early access, simple after. Every plan runs on Meta&apos;s open-weight AI models —
-        Muse Spark Open on all plans, with Muse Wonder for complex and agentic work on Premium.
+        Early access is simple: every account starts with <strong>$1 of free credit</strong>. Model
+        calls draw it down; when it&apos;s gone for the month, sends pause until next month. Paid
+        top-ups are coming soon.
       </P>
 
-      <H2 id="plans">Plans</H2>
-      <DocTable
-        head={['Plan', 'Price', 'What you get']}
-        rows={[
-          ['Free', '$0', 'Up to 3 Bots with memory. Watch ads to earn credits, then spend them on chats, images, and tools.'],
-          ['Starter', '$5/mo', 'Up to 10 Bots with memory, generous usage limits — enough to hand off the busywork.'],
-          ['Premium', '$30/mo', 'Unlimited Bots and group chats, Muse Wonder for browser work, highest usage limits.'],
-        ]}
-      />
-
-      <H2 id="credits">Credits and usage</H2>
+      <H2 id="cap">The monthly cap</H2>
       <P>
-        Paid activity spends credits: chats, images, and tool calls each draw from your balance.
-        Watch your balance any time in the <strong>Usage</strong> panel under your profile menu —
-        it breaks spend down by Bot, so you can see exactly where the work went.
+        Spend is capped at $1 per calendar month. The app checks before every run — at or over the
+        cap, new sends are refused with a notice instead of starting. The cap resets on the 1st.
+        Hello intros are exempt, so a fresh thread never greets you with a billing error.
       </P>
       <Callout kind="tip">
-        On Free, credits come from watching ads — no credit card required, ever.
+        Unpriced providers meter tokens but bill $0, so the cap only binds once priced spend
+        lands. The Usage panel shows which is which.
       </Callout>
 
-      <H2 id="models">Which models do my Bots use?</H2>
+      <H2 id="usage">Watching usage</H2>
       <P>
-        Meta open-weight models (Muse Spark Open), served via Modal, on every plan. Premium adds
-        Muse Wonder for browser work and heavier agentic tasks. You never pick models yourself —
-        Wayfind routes each job to the right one.
+        Open <strong>Usage</strong> in the profile menu any time: billed spend against the $1 cap
+        with a progress bar, token and tool-call stats by day, week, or month, a spend-by-model
+        breakdown, and the recent runs behind the numbers. Everything the cap counts is visible
+        there.
       </P>
+
+      <H2 id="models">What costs what</H2>
+      <P>
+        Chat models bill from published per-token rates (see{' '}
+        <a href="/docs/models" className="font-bold text-cta hover:underline">Models</a>); images
+        bill a flat rate per successful render. The Usage panel breaks spend down by model, so you
+        can see exactly where the work went.
+      </P>
+
+      <DocTable
+        head={['Activity', 'How it bills']}
+        rows={[
+          ['Chat and tool calls', 'Per-token, from published provider rates.'],
+          ['Image generation', 'Flat rate per successful image.'],
+          ['QA browser runs', 'Test-cloud credits, currently off-ledger — visible in the provider dashboard, not the Usage panel.'],
+        ]}
+      />
     </article>
   );
 }

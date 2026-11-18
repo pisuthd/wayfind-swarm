@@ -13,6 +13,20 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.0',
+    date: '2026-11-18',
+    tagline: 'Early-access billing, browser-verified QA, and one import per gateway.',
+    added: [
+      'Usage panel with spend-against-cap bar, spend-by-model breakdown, and recent runs — plus a $1 monthly cap that pauses sends instead of surprising you.',
+      'QA engineers verify web work in a real browser and report pass/fail with screenshots.',
+      'Importing any connector lights up its whole gateway: one Zoho import covers every Zoho app, one Web3 import covers them all.',
+    ],
+    changed: [
+      'Early access starts with the Software Development team; Design Studio and Video Production are coming soon.',
+      'Greeting suggestion cards removed for a cleaner start — tutorials arrive later.',
+    ],
+  },
+  {
     version: '1.3.0',
     date: '2026-11-18',
     tagline: 'Hire whole teams in one click, and every bot can talk to its teammates.',
