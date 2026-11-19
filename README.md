@@ -2,7 +2,7 @@
 
 Wayfind SWARM lets you hire a team of AI bots instead of prompting a chatbot. Each team runs on its own cloud
 computer (Debian 12 microVM) with baked-in dev skills, a terminal, a live website preview, and connectors to your
-real tools — Zoho apps and Solana wallets included.
+real tools.
 
 It gives you an always-on AI workforce. You hire a Software Development team: a chief of staff who plans and
 delegates, builders who write code, and Ash — a QA engineer who opens a real browser and tests what the builders
