@@ -1,0 +1,9 @@
+# computer/ (microvm agent — source of truth is wayfind-cloud)
+computer/node_modules/
+computer/dist/
+computer/.env
+computer/*.log
+computer/computer.zip
+computer/scripts/image/computer.zip
+computer/workspace/.wayfind/
+computer/workspace/conversations.jsonl
